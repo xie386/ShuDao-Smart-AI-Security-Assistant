@@ -1,0 +1,19 @@
+# 环境与密钥
+.env
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 运行时产物
+uploads/
+chroma/
+
+# IDE
+.idea/
+.vscode/

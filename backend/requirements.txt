@@ -1,0 +1,41 @@
+# 蜀道智能安全助手 — 环境需求文件
+#
+# 说明：本项目不创建虚拟环境，直接使用全局 Python（C:\python，Python 3.12.4）。
+# 以下版本为全局环境实际安装版本（pip freeze 提取，按模块分组）。
+# 安装: pip install -r requirements.txt
+
+# ---- 核心 Web ----
+fastapi==0.135.3
+uvicorn==0.42.0
+pydantic==2.12.3
+pydantic-settings==2.14.1
+python-dotenv==1.2.2
+python-multipart==0.0.22
+anyio==4.13.0
+sse-starlette==3.3.4
+
+# ---- 数据库 ----
+SQLAlchemy==2.0.50
+mysql-connector-python==9.6.0
+redis==8.1.0
+# alembic（可选：数据库迁移，本期由 P3 的 schema.sql 管理）
+
+# ---- 安全 ----
+python-jose==3.3.0
+bcrypt==5.0.0
+
+# ---- AI / RAG（P2 线）----
+openai==2.37.0
+httpx==0.28.1
+chromadb==1.5.9
+sentence-transformers==5.7.0
+torch==2.6.0+cu124
+rank-bm25==0.2.2
+
+# ---- PPT 生成（P3 线）----
+python-pptx==1.0.2
+
+# ---- 测试 ----
+pytest==9.1.1
+pytest-cov==7.1.0
+email-validator==2.3.0
