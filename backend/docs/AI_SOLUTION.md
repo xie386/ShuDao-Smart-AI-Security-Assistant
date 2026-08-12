@@ -137,7 +137,7 @@ flowchart LR
 
 ### 4.4 嵌入模型
 
-使用**本地模型 `D:/LLM/model/bge-large-zh`**（sentence-transformers 加载，CPU 推理），中文检索效果好、免 API 调用、离线可用。查询与文档统一经本地模型嵌入（`src/ai/embeddings.py`），入库与检索均显式传向量，不依赖 Chroma 默认 MiniLM。
+使用**本地模型 `D:/LLM/model/bge-large-zh`**（sentence-transformers 加载，默认 GPU/CUDA 推理，无 GPU 环境可切 CPU——用户决策，`EMBEDDING_DEVICE` 配置），中文检索效果好、免 API 调用、离线可用。查询与文档统一经本地模型嵌入（`src/ai/embeddings.py`），入库与检索均显式传向量，不依赖 Chroma 默认 MiniLM。
 
 ### 4.5 入库与更新
 

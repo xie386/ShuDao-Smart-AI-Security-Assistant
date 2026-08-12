@@ -73,7 +73,7 @@ backend/
 │   │   ├── config.py        # pydantic-settings 读取环境变量
 │   │   ├── security.py      # JWT 签发/校验、BCrypt 密码
 │   │   ├── db.py            # SQLAlchemy 引擎/会话
-│   │   └── redis.py         # Redis 连接池
+│   │   └── redis_client.py  # Redis 连接池
 │   ├── models/              # ORM 模型 (SQLAlchemy)
 │   │   ├── user.py
 │   │   ├── hazard.py        # 隐患 H 系列

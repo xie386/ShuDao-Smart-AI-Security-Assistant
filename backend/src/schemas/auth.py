@@ -1,4 +1,4 @@
-"""认证相关请求/响应契约。"""
+"""认证相关请求/响应契约。""" 
 from datetime import datetime
 from typing import Optional
 

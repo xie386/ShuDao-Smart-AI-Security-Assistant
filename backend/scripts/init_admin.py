@@ -8,6 +8,10 @@
 已存在同名用户时跳过，不覆盖密码。
 """
 import sys
+from pathlib import Path
+
+# 允许从 backend/ 下直接运行脚本
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
 

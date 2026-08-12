@@ -16,7 +16,7 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在")
 
         user = User(
-            username=data.username,
+            username=data.username, 
             hashed_password=hash_password(data.password),
             role="employee",  # 安全约定：注册一律为普通员工
             real_name=data.real_name,

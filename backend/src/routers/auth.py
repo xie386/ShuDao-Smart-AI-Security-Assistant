@@ -9,7 +9,7 @@ from src.services.auth_service import AuthService
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
-
+ 
 @router.post(
     "/register",
     response_model=UserOut,
