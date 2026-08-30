@@ -1,10 +1,10 @@
-"""本地嵌入模型封装：bge-large-zh（sentence-transformers）。
+"""本地嵌入模型封装：bge-large-zh（LangChain HuggingFaceEmbeddings）。
 
 设计要点（AI_SOLUTION §4.4）：
-- 本地模型 D:/LLM/model/bge-large-zh，CPU 推理，免 API、离线可用；
+- 本地模型 D:/LLM/model/bge-large-zh，默认 GPU/CUDA（EMBEDDING_DEVICE 可切 cpu）；
 - **lazy load**：首次调用才加载模型（约 1.3GB），不拖慢核心后端启动；
-- 查询与文档统一经本模块嵌入，入库/检索均显式传向量，不依赖 Chroma 默认 MiniLM；
-- 查询前加 bge 官方指令前缀（settings.EMBEDDING_QUERY_PREFIX），提升检索相关性。
+- 查询前加 bge 官方指令前缀，提升检索相关性；
+- 接口签名与自研版一致（embed_query/embed_documents），业务层零改动。
 
 用法：
     from src.ai.embeddings import embedding_model
@@ -25,18 +25,19 @@ class EmbeddingModel:
 
     @property
     def model(self):
-        """懒加载 SentenceTransformer（首次调用约 30-60s）。"""
+        """懒加载 HuggingFaceEmbeddings（底层 sentence-transformers，首次约 30-60s）。"""
         if self._model is None:
-            from sentence_transformers import SentenceTransformer  # lazy
+            from langchain_huggingface import HuggingFaceEmbeddings  # lazy
 
-            self._model = SentenceTransformer(
-                settings.EMBEDDING_MODEL_PATH, device=settings.EMBEDDING_DEVICE
+            self._model = HuggingFaceEmbeddings(
+                model_name=settings.EMBEDDING_MODEL_PATH,
+                model_kwargs={"device": settings.EMBEDDING_DEVICE},
+                encode_kwargs={"normalize_embeddings": True},
             )
             logger.info(
-                "嵌入模型已加载: %s (device=%s, dim=%s)",
+                "嵌入模型已加载(LangChain): %s (device=%s)",
                 settings.EMBEDDING_MODEL_PATH,
                 settings.EMBEDDING_DEVICE,
-                self._model.get_embedding_dimension(),
             )
         return self._model
 
@@ -44,15 +45,12 @@ class EmbeddingModel:
         """批量文档/分块编码，归一化后返回（与 Chroma 余弦距离匹配）。"""
         if not texts:
             return []
-        vectors = self.model.encode(
-            texts, normalize_embeddings=True, batch_size=32, show_progress_bar=False
-        )
-        return vectors.tolist()
+        return self.model.embed_documents(texts)
 
     def embed_query(self, text: str) -> list[float]:
         """单条查询编码：自动加 bge 指令前缀。"""
         prefixed = f"{settings.EMBEDDING_QUERY_PREFIX}{text}"
-        return self.model.encode(prefixed, normalize_embeddings=True).tolist()
+        return self.model.embed_query(prefixed)
 
 
 @lru_cache

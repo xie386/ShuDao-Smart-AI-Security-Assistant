@@ -14,7 +14,7 @@ def _new_username() -> str:
 
 
 def test_register_returns_employee_role():
-    """安全约定：注册接口不接受 role，返回角色必须为 employee。"""
+    """默认角色为 employee（不传 role 字段）。"""
     with TestClient(app) as client:
         resp = client.post(
             "/api/auth/register",
@@ -24,6 +24,32 @@ def test_register_returns_employee_role():
         body = resp.json()
         assert body["role"] == "employee"
         assert "hashed_password" not in body  # 不泄露哈希
+
+
+def test_register_safety_officer_role():
+    """安全约定（2026-08-13 修订）：可注册 safety_officer（责任人/安全员）。"""
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/auth/register",
+            json={
+                "username": _new_username(),
+                "password": "pass123456",
+                "real_name": "安全员小张",
+                "role": "safety_officer",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["role"] == "safety_officer"
+
+
+def test_register_admin_rejected():
+    """安全边界：admin 禁止通过注册创建（只能 init_admin.py 初始化）。"""
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/auth/register",
+            json={"username": _new_username(), "password": "pass123456", "role": "admin"},
+        )
+        assert resp.status_code == 422  # Literal 枚举拦截
 
 
 def test_register_duplicate_username_conflict():

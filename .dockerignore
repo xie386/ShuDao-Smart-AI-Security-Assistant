@@ -1,0 +1,10 @@
+# Docker 构建上下文排除（context=项目根 team/，用于 deploy/backend/Dockerfile）
+.git
+**/__pycache__
+**/*.pyc
+backend/chroma        # 向量库（bind mount 复用本机）
+backend/uploads       # 上传图（bind mount）
+backend/ppt_files     # PPT 产物（bind mount）
+backend/docs          # 文档（无需进镜像）
+backend/tests         # 测试（无需进镜像）
+backend/.env          # 密钥由 compose env_file 注入，不进镜像

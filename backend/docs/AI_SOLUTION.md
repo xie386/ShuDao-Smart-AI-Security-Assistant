@@ -20,6 +20,20 @@
 
 **决策**：以 **DeepseekV4-flash** 为主模型，agnes2.5-flash 为降级备选,qwen3.8max作为图片中安全隐患排查的子智能体接入的模型。通过 **OpenAI 兼容 SDK**（`openai` 包，改 `base_url`/`api_key`）统一接入，便于热切换。
 
+> **AI 编排框架（课程要求）**：AI 部分统一采用 **LangChain 1.x 架构**——LLM 调用走 `langchain_openai.ChatOpenAI`（主/备模型用 `with_fallbacks` 原生降级）、嵌入走 `langchain_huggingface.HuggingFaceEmbeddings`、向量检索走 `langchain_chroma.Chroma`（`get_vectorstore().as_retriever()`）、问答/PPT 链用 LCEL 编排；重排（bge-reranker-base）与结构感知分块等 LangChain 无原生实现的能力，保留自研实现并经 `RunnableLambda` 接入 LangChain 生态。对外接口签名（chat/chat_stream/embed_*/rerank）保持不变，业务层零改动。
+
+### 1.1 视觉子智能体：图片隐患识别（正式功能）
+
+> 说明：任务书未明确写出该需求，但项目确有图片隐患识别能力要求，视觉子智能体即为此设计。
+
+- **功能定位**：H01 隐患上报的 AI 辅助研判——用户上传现场图片后，识别图片中的安全隐患，返回隐患类别、等级、整改建议。
+- **输入**：现场图片（jpg/jpeg/png/webp，≤10MB）+ 可选现场文字描述。
+- **输出**：JSON `{"detected": bool, "hazards": [{"category", "description", "level", "suggestion", "location"}], "summary"}`，等级沿用 重大/较大/一般/轻微 四级；`location` 为隐患边界框坐标 `[x1, y1, x2, y2]`（**qwen3.8max 实测具备目标检测/坐标输出能力**，公众号实测 + 领导小组实测；无法精确定位时模型输出 null，前端按示意框展示）。
+- **实现**：`prompt/prompts.yml` 的 `hazard_vision` 场景（四段式，强制 JSON）+ `src/ai/vision.py`（OpenAI 兼容多模态调用，text + image_url data URI）。
+- **接口**：`POST /api/vision/hazard`（复用图片上传校验链路，识别结果与图片 URL 一并返回）。
+- **与 H01 衔接**：识别结果作为上报参考（可预填等级/类型），最终以上报人确认为准。
+- **成本策略**：按次调用，演示场景用量小；API Key 配置于 `.env`（QWEN_API_KEY/QWEN_BASE_URL）。
+
 ---
 
 ## 2. Prompt 模板设计

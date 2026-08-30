@@ -24,6 +24,10 @@ MODEL_MAP = [
     ("conversations", models.Conversation),
     ("chat_messages", models.ChatMessage),
     ("ppt_tasks", models.PptTask),
+    ("exam_papers", models.ExamPaper),
+    ("knowledge_contributions", models.KnowledgeContribution),
+    ("knowledge_contrib_timeline", models.KnowledgeContribTimeline),
+    ("user_profiles", models.UserProfile),
 ]
 
 

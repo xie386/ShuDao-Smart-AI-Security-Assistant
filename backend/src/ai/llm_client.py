@@ -1,19 +1,18 @@
-"""大模型客户端：DeepSeek 主 / agnes-2.5-flash 降级，统一 OpenAI 兼容 SDK。
+"""大模型客户端：DeepSeek 主 / agnes-2.5-flash 降级（LangChain 架构）。
 
 文档决策（AI_SOLUTION §1）：主模型 deepseek-v4-flash，降级备选 agnes-2.5-flash，
-视觉子模型 qwen3.8max（图片隐患排查，后续接入）。
-所有端点经 `openai` 包统一接入（改 base_url/api_key），便于热切换。
+视觉子模型 qwen3.8max（见 vision.py）。
+基于 LangChain 1.x：ChatOpenAI（OpenAI 兼容端点）+ with_fallbacks 原生降级。
 
-用法：
+用法（接口签名与自研版一致，业务层零改动）：
     from src.ai.llm_client import llm_client
     answer = llm_client.chat([{"role": "user", "content": "高处作业有哪些要求？"}])
     for chunk in llm_client.chat_stream([...]):
         print(chunk, end="")
 """
 import logging
-from typing import Iterable
 
-from openai import OpenAI
+from langchain_openai import ChatOpenAI
 
 from src.core.config import settings
 
@@ -21,90 +20,71 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """OpenAI 兼容多模型客户端：主模型调用异常自动降级 agnes。"""
+    """LangChain ChatOpenAI 双模型客户端：主模型异常自动降级 agnes（with_fallbacks）。"""
 
     def __init__(self) -> None:
-        self._primary: OpenAI | None = None
-        self._fallback: OpenAI | None = None
+        self._primary: ChatOpenAI | None = None
+        self._fallback: ChatOpenAI | None = None
+        self._chain = None
 
     # ---- 客户端懒加载 ----
 
-    def _primary_client(self) -> OpenAI:
+    def _primary_llm(self) -> ChatOpenAI:
         if self._primary is None:
-            self._primary = OpenAI(
+            self._primary = ChatOpenAI(
+                model=settings.DEEPSEEK_MODEL,
                 api_key=settings.DEEPSEEK_API_KEY,
                 base_url=settings.DEEPSEEK_BASE_URL,
+                temperature=settings.LLM_TEMPERATURE,
                 timeout=settings.LLM_TIMEOUT,
                 max_retries=settings.LLM_MAX_RETRIES,
             )
         return self._primary
 
-    def _fallback_client(self) -> OpenAI:
+    def _fallback_llm(self) -> ChatOpenAI:
         if self._fallback is None:
-            self._fallback = OpenAI(
+            self._fallback = ChatOpenAI(
+                model=settings.AGNES_MODEL,
                 api_key=settings.AGNES_API_KEY,
                 base_url=settings.AGNES_BASE_URL,
+                temperature=settings.LLM_TEMPERATURE,
                 timeout=settings.LLM_TIMEOUT,
                 max_retries=settings.LLM_MAX_RETRIES,
             )
         return self._fallback
 
+    @property
+    def chain(self):
+        """主模型 + with_fallbacks 降级链（invoke/stream 均生效）。"""
+        if self._chain is None:
+            self._chain = self._primary_llm().with_fallbacks([self._fallback_llm()])
+            logger.info(
+                "LangChain 链就绪: 主=%s 降级=%s",
+                settings.DEEPSEEK_MODEL,
+                settings.AGNES_MODEL,
+            )
+        return self._chain
+
     # ---- 非流式 ----
 
     def chat(self, messages: list[dict], temperature: float | None = None) -> str:
-        """非流式对话：优先 DeepSeek，异常自动降级 agnes，再失败抛出。"""
-        try:
-            return self._complete(
-                self._primary_client(), settings.DEEPSEEK_MODEL, messages, temperature
-            )
-        except Exception as exc:
-            logger.warning("DeepSeek 调用失败(%s)，降级 agnes", exc)
-            return self._complete(
-                self._fallback_client(), settings.AGNES_MODEL, messages, temperature
-            )
+        """非流式对话：优先 DeepSeek，异常自动降级 agnes（LangChain fallbacks）。"""
+        chain = self.chain.bind(temperature=temperature) if temperature is not None else self.chain
+        resp = chain.invoke(messages)  # messages: [{"role","content"}, ...]
+        content = resp.content if hasattr(resp, "content") else str(resp)
+        if not content:
+            raise RuntimeError("模型返回空内容")
+        return content
 
     # ---- 流式（SSE，A03 用）----
 
-    def chat_stream(self, messages: list[dict], temperature: float | None = None) -> Iterable[str]:
+    def chat_stream(self, messages: list[dict], temperature: float | None = None):
         """流式对话：yield 增量文本；主模型中途失败自动切换降级模型续答。"""
-        try:
-            yield from self._stream(
-                self._primary_client(), settings.DEEPSEEK_MODEL, messages, temperature
-            )
-        except Exception as exc:
-            logger.warning("DeepSeek 流式失败(%s)，降级 agnes", exc)
-            yield from self._stream(
-                self._fallback_client(), settings.AGNES_MODEL, messages, temperature
-            )
-
-    # ---- 内部实现 ----
-
-    @staticmethod
-    def _complete(client: OpenAI, model: str, messages: list[dict], temperature: float | None) -> str:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature if temperature is not None else settings.LLM_TEMPERATURE,
-        )
-        content = resp.choices[0].message.content
-        if not content:
-            raise RuntimeError(f"{model} 返回空内容")
-        return content
-
-    @staticmethod
-    def _stream(
-        client: OpenAI, model: str, messages: list[dict], temperature: float | None
-    ) -> Iterable[str]:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature if temperature is not None else settings.LLM_TEMPERATURE,
-            stream=True,
-        )
-        for chunk in resp:
-            delta = chunk.choices[0].delta
-            if delta and delta.content:
-                yield delta.content
+        chain = self.chain.bind(temperature=temperature) if temperature is not None else self.chain
+        for chunk in chain.stream(messages):
+            text = chunk.content if hasattr(chunk, "content") else str(chunk)
+            if text:
+                yield text
 
 
 # 模块级单例：全项目复用同一客户端（连接复用）

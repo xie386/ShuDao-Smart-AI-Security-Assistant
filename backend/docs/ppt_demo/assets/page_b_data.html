@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; }
+  .page {
+    width: 1280px; height: 720px; padding: 56px 72px;
+    background: linear-gradient(135deg, #0f2027 0%, #203a43 55%, #2c5364 100%);
+    color: #fff; display: flex; flex-direction: column;
+  }
+  .tag { font-size: 22px; color: #7fd4c1; letter-spacing: 6px; margin-bottom: 12px; }
+  .title { font-size: 46px; font-weight: 700; margin-bottom: 6px; }
+  .sub { font-size: 18px; color: #9fb3c8; margin-bottom: 40px; }
+  .cards { display: flex; gap: 32px; margin-bottom: 44px; }
+  .card {
+    flex: 1; background: rgba(255,255,255,.08); border-radius: 14px;
+    padding: 30px 24px; border: 1px solid rgba(255,255,255,.12);
+  }
+  .num { font-size: 54px; font-weight: 800; color: #7fd4c1; margin-bottom: 10px; }
+  .label { font-size: 17px; color: #d7e3ef; line-height: 1.5; }
+  .bar-wrap { background: rgba(255,255,255,.1); border-radius: 8px; height: 34px;
+              padding: 4px; }
+  .bar { width: 95%; height: 26px; border-radius: 6px;
+         background: linear-gradient(90deg, #11998e, #38ef7d);
+         display: flex; align-items: center; justify-content: flex-end;
+         padding-right: 10px; font-size: 15px; font-weight: 700; color: #04222a; }
+  .foot { margin-top: auto; font-size: 15px; color: #7d8ea3;
+          display: flex; justify-content: space-between; }
+</style></head><body>
+<div class="page">
+  <div class="tag">DATA · 2026</div>
+  <div class="title">高处坠落 · 数据警示</div>
+  <div class="sub">一组数字，说明为什么防护设施不容打折</div>
+  <div class="cards">
+    <div class="card"><div class="num">42%</div><div class="label">高处坠落占建筑业<br>生产安全事故比例</div></div>
+    <div class="card"><div class="num">78%</div><div class="label">正确系挂安全带可<br>避免的坠落伤亡</div></div>
+    <div class="card"><div class="num">≥2m</div><div class="label">坠落高度基准面<br>（GB/T 3608-2008）</div></div>
+  </div>
+  <div class="bar-wrap"><div class="bar">防护装备配置率 95%</div></div>
+  <div class="foot"><span>蜀道集团安全管理部 · 安全数据看板</span><span>数据来源：住建部事故统计</span></div>
+</div>
+</body></html>

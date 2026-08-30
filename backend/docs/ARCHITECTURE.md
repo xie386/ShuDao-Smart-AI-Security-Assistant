@@ -59,6 +59,7 @@ flowchart TB
 | 缓存/消息 | Redis | 同左（不变） | 会话缓存、接口限流、站内消息队列 |
 | 向量库 | 未指定 | **Chroma** | 轻量、本地文件持久化、Python 原生、上手快，契合课程项目 |
 | AI 集成 | 国内大模型 API | deepseek-v4-flash作为主模型,接入qwen3.8max作为视觉子模型 | 国内合规、中文能力强 |
+| AI 编排框架 | 未指定 | **LangChain 1.x**（ChatOpenAI / LCEL / langchain-chroma / HuggingFaceEmbeddings / with_fallbacks 降级） | **课程要求**：AI 部分统一 LangChain 架构；重排/分块等自定义能力经 RunnableLambda 接入 |
 | 部署 | Docker + Nginx | 同左（不变） | FastAPI 用 `uvicorn` + `gunicorn` 多 worker |
 
 ---

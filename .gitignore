@@ -1,0 +1,43 @@
+# ══════════════════════════════════════════════════════════════
+# 蜀道智能安全助手（ShuDao Smart AI Security Assistant）· .gitignore
+# 原则：不上传向量库、数据库等大型文件 + 账号数据、用户产出；
+#       保留快速重建脚本（backend/scripts/：crawl_* 采集、collect_kb 建库、
+#       init_admin 建账号、eval_qa 评测、db_verify 校验）。
+# ══════════════════════════════════════════════════════════════
+
+# ── Python 生成文件 ──
+__pycache__/
+*.py[oc]
+*.pyc
+build/
+dist/
+wheels/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── 密钥 / 编辑器 / 系统 ──
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ── 向量库（7.2G，由 backend/scripts/collect_kb.py 一键重建）──
+backend/chroma/
+
+# ── 知识源原始文档（104M，由 backend/scripts/crawl_laws.py 等重新采集）──
+backend/knowledge_src/
+
+# ── 上传文件（隐患图片 / 头像 / 导出的 PPT·试卷，用户数据）──
+backend/uploads/
+
+# ── 日志与临时文件 ──
+*.log
+logs/
+*.tmp
+backend/scripts/_diag_out.txt
+backend/scripts/_diag_retrieval.py

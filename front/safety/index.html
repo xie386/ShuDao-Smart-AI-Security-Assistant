@@ -1,0 +1,2271 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜀道安全助手 · 智能安全管理平台</title>
+<style>
+/* ============ 川蜀红色系设计系统 ============ */
+:root {
+  --primary:#A93226; --primary-dark:#7B241C; --primary-soft:#F7E9E6;
+  --gold:#C9A227; --gold-soft:#FBF3DE;
+  --bg:#FBF7F1; --card:#FFFFFF; --ink:#2C2118; --muted:#8A7B6B;
+  --border:#E8DFD3; --border-strong:#D6C8B4;
+  --st-pending:#C0392B; --st-doing:#D68910; --st-review:#B7950B; --st-done:#1E8449; --st-reject:#7F8C8D;
+  --shadow:0 1px 3px rgba(44,33,24,.08),0 4px 16px rgba(44,33,24,.06);
+  --radius:6px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:system-ui,"Microsoft YaHei",sans-serif; background:var(--bg); color:var(--ink); min-height:100vh; }
+h1,h2,h3,.brand { font-family:Georgia,"Songti SC","SimSun",serif; }
+.hidden { display:none !important; }
+
+/* 顶部导航 */
+#topbar { background:var(--primary-dark); color:#F6EAE2; display:flex; align-items:center; padding:0 20px; height:56px; position:sticky; top:0; z-index:100; }
+.seal { width:34px; height:34px; background:var(--primary); border:2px solid var(--gold); border-radius:6px; display:flex; align-items:center; justify-content:center; font-family:"Songti SC",serif; font-size:17px; color:#F6EAE2; margin-right:10px; font-weight:bold; }
+.brand { font-size:17px; letter-spacing:2px; margin-right:36px; }
+/* 顶部导航 —— uiverse 005 radio-buttons (glitch-clip) 川蜀红改色版
+   原片段是 neon 紫绿；此处只借用「clip-path 切角 + 金色错位描边层 + glitch 抖动」
+   三个动效技巧，配色全部换成项目的 --primary / --gold。
+   注意：导航是 <a> + hash 路由，不能换成真 radio，所以用 .active 代替 :checked。 */
+.nav-item {
+  --nav-clip: polygon(11% 0, 95% 0, 100% 25%, 90% 90%, 95% 90%, 85% 90%, 85% 100%, 7% 100%, 0 80%);
+  --nav-face: transparent;
+  --nav-edge: transparent;
+  --nav-border: 4px;
+  --shimmy: 4;
+  position: relative;
+  z-index: 0;
+  color: #E8D5C8;
+  text-decoration: none;
+  padding: 8px 16px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  font-weight: 600;
+  margin-right: 6px;
+  line-height: 22px;
+  transition: color .22s ease, letter-spacing .22s ease;
+}
+/* 双层：before = 金色错位描边，after = 红色实体面 */
+.nav-item::before,
+.nav-item::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: var(--nav-clip);
+  z-index: -1;
+  transition: background .22s ease, transform .22s ease;
+}
+.nav-item::before { background: var(--nav-edge); transform: translate(var(--nav-border), 0); }
+.nav-item::after  { background: var(--nav-face); }
+
+.nav-item:hover {
+  --nav-face: rgba(255,255,255,.14);
+  --nav-edge: rgba(201,162,39,.45);
+  color: #FFF6EC;
+  letter-spacing: 2px;
+}
+.nav-item.active {
+  --nav-face: var(--primary);
+  --nav-edge: var(--gold);
+  color: #fff;
+}
+/* glitch 抖动层：仅激活项常驻，hover 时短促触发 */
+.nav-item .nav-glitch {
+  position: absolute;
+  inset: calc(var(--nav-border) * -1);
+  background: var(--gold);
+  clip-path: var(--nav-clip);
+  z-index: -2;
+  display: none;
+  pointer-events: none;
+}
+.nav-item .nav-glitch::before {
+  content: '';
+  position: absolute;
+  inset: var(--nav-border);
+  clip-path: var(--nav-clip);
+  background: var(--primary);
+}
+.nav-item:hover .nav-glitch { display: block; animation: nav-glitch 2s infinite; }
+.nav-item.active .nav-glitch { display: block; animation: nav-glitch 5s infinite; }
+@keyframes nav-glitch {
+  0%   { clip-path: polygon(0 2%,100% 2%,100% 95%,95% 95%,95% 90%,85% 90%,85% 95%,8% 95%,0 70%); }
+  2%,8%{ clip-path: polygon(0 78%,100% 78%,100% 100%,95% 100%,95% 90%,85% 90%,85% 100%,8% 100%,0 78%); transform: translate(calc(var(--shimmy) * -1%),0); }
+  6%   { clip-path: polygon(0 78%,100% 78%,100% 100%,95% 100%,95% 90%,85% 90%,85% 100%,8% 100%,0 78%); transform: translate(calc(var(--shimmy) * 1%),0); }
+  9%   { transform: translate(0,0); }
+  10%  { clip-path: polygon(0 44%,100% 44%,100% 54%,95% 54%,85% 54%,8% 54%,0 54%); transform: translate(calc(var(--shimmy) * 1%),0); }
+  13%  { transform: translate(0,0); }
+  14%,21% { clip-path: polygon(0 0,100% 0,100% 0,95% 0,85% 0,8% 0,0 0); transform: translate(calc(var(--shimmy) * 1%),0); }
+  30%  { transform: translate(calc(var(--shimmy) * -1%),0); }
+  35%,45% { clip-path: polygon(0 40%,100% 40%,100% 85%,95% 85%,85% 85%,8% 85%,0 70%); transform: translate(calc(var(--shimmy) * -1%)); }
+  40%  { transform: translate(calc(var(--shimmy) * 1%)); }
+  50%  { transform: translate(0,0); }
+  55%  { clip-path: polygon(0 63%,100% 63%,100% 80%,95% 80%,85% 80%,8% 80%,0 70%); transform: translate(calc(var(--shimmy) * 1%),0); }
+  60%  { transform: translate(0,0); }
+  31%,61%,100% { clip-path: polygon(0 0,100% 0,100% 0,95% 0,85% 0,8% 0,0 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-item .nav-glitch { animation: none !important; }
+}
+.topbar-right { margin-left:auto; display:flex; align-items:center; gap:12px; font-size:13px; }
+.top-avatar { width:30px; height:30px; border-radius:50%; object-fit:cover; border:2px solid var(--gold); background:var(--primary-soft); display:none; }
+.top-avatar.show { display:block; }
+.role-tag { background:var(--gold); color:#3A2E0A; padding:2px 10px; border-radius:10px; font-size:12px; }
+#topbar .btn-ghost { background:none; border:1px solid rgba(255,255,255,.4); color:#F6EAE2; padding:5px 12px; border-radius:4px; cursor:pointer; font-size:13px; }
+#topbar .btn-ghost:hover { background:rgba(255,255,255,.12); }
+
+/* 布局 */
+#main { max-width:1200px; margin:0 auto; padding:24px 20px 60px; }
+.page { display:none; }
+.page.active { display:block; }
+.page-title { font-size:22px; margin-bottom:4px; }
+.page-sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+
+/* 卡片 */
+.card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:20px; margin-bottom:20px; }
+.card h3 { font-size:15px; margin-bottom:14px; border-left:3px solid var(--primary); padding-left:10px; }
+
+/* 按钮 */
+.btn { display:inline-block; padding:8px 18px; border-radius:4px; border:none; font-size:14px; cursor:pointer; text-decoration:none; }
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:var(--primary-dark); }
+.btn-gold { background:var(--gold); color:#3A2E0A; }
+.btn-outline { background:#fff; border:1px solid var(--border-strong); color:var(--ink); }
+.btn-outline:hover { border-color:var(--primary); color:var(--primary); }
+.btn-sm { padding:4px 12px; font-size:13px; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+
+/* 表单 —— uiverse 004 inputs (neon-shadow) 川蜀红改色版
+   借用「硬偏移投影 focus 时收起 + 左右竖边框 + 上下划线由右向左展开」技巧。
+   原片段深蓝 #0B2447 全部换成 --primary；无需改 HTML，纯 CSS 作用于现有 input。 */
+label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; }
+input[type=text],input[type=password],input[type=number],input[type=date],input[type=datetime-local],select,textarea {
+  width:100%; padding:9px 12px;
+  border:2px solid var(--border-strong);
+  border-top:none; border-bottom:none;
+  border-radius:0;
+  font-size:14px; background:#fff; outline:none; font-family:inherit;
+  box-shadow:5px 5px 0px 0px var(--border-strong);
+  transition:box-shadow .5s ease, border-color .35s ease, background .35s ease;
+}
+input[type=text]:hover,input[type=password]:hover,input[type=number]:hover,
+input[type=date]:hover,input[type=datetime-local]:hover,select:hover,textarea:hover {
+  border-color:var(--primary);
+  box-shadow:5px 5px 0px 0px rgba(169,50,38,.35);
+}
+/* focus：硬阴影收起（向内“压下去”），边框转红 */
+input:focus,select:focus,textarea:focus {
+  border-color:var(--primary);
+  box-shadow:none;
+  background:#FFFDFB;
+}
+/* 上下划线：包一层 .input-container 时由右向左展开（新写的表单可用） */
+.input-container { position:relative; display:block; }
+.input-container .topline,
+.input-container .underline {
+  position:absolute; content:"";
+  background-color:var(--primary);
+  width:0%; height:2px; right:0;
+  transition:width .5s ease;
+  pointer-events:none;
+}
+.input-container .topline { top:0; }
+.input-container .underline { bottom:0; }
+.input-container input:focus ~ .topline { width:35%; }
+.input-container input:focus ~ .underline { width:100%; }
+.input-container .label {
+  position:absolute; top:9px; left:12px;
+  color:var(--primary); font-size:12px;
+  transform:scale(0); transform-origin:left center;
+  transition:all .5s ease; z-index:-1;
+}
+.input-container input:focus ~ .label { top:-14px; transform:scale(1); }
+textarea { min-height:90px; resize:vertical; }
+.form-row { display:flex; gap:16px; }
+.form-row > div { flex:1; }
+.hint { font-size:12px; color:var(--muted); margin-top:4px; }
+
+/* 表格 */
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th { text-align:left; padding:10px 12px; color:var(--muted); font-weight:600; border-bottom:2px solid var(--border); font-size:13px; }
+td { padding:11px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+tr:hover td { background:#FCF9F4; }
+
+/* 状态徽章 */
+.badge { display:inline-block; padding:2px 10px; border-radius:10px; font-size:12px; color:#fff; }
+.badge.待处理{background:var(--st-pending)} .badge.处理中{background:var(--st-doing)}
+.badge.待验收{background:var(--st-review)} .badge.已闭环{background:var(--st-done)}
+.badge.已驳回{background:var(--st-reject)}
+.badge.lv-重大{background:#922B21} .badge.lv-较大{background:#E67E22} .badge.lv-一般{background:#F4D03F;color:#3A2E0A} .badge.lv-轻微{background:#AAB7B8}
+
+/* AI 识别隐患条目：按等级左边框着色（用户需求 2026-08-14：程度词可视化） */
+.hazard-item { margin:10px 0; padding:10px 12px; background:#FCF9F4; border:1px solid var(--border); border-left:4px solid #999; border-radius:4px; line-height:1.7; }
+.hazard-item.lv-重大 { border-left-color:#922B21; }
+.hazard-item.lv-较大 { border-left-color:#E67E22; }
+.hazard-item.lv-一般 { border-left-color:#F4D03F; }
+.hazard-item.lv-轻微 { border-left-color:#AAB7B8; }
+.hazard-item .hint { display:block; margin-top:4px; }
+
+/* 筛选栏 */
+.filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+.filter-bar input,.filter-bar select { width:auto; min-width:120px; }
+
+/* 分页 */
+.pager { display:flex; gap:8px; align-items:center; margin-top:16px; font-size:13px; color:var(--muted); }
+
+/* 时间线 */
+.timeline { position:relative; padding-left:22px; }
+.timeline::before { content:''; position:absolute; left:6px; top:6px; bottom:6px; width:2px; background:var(--border-strong); }
+.tl-item { position:relative; padding:8px 0 8px 14px; }
+.tl-item::before { content:''; position:absolute; left:-22px; top:14px; width:10px; height:10px; border-radius:50%; background:var(--primary); border:2px solid var(--gold); }
+.tl-action { font-size:14px; font-weight:600; }
+.tl-note { font-size:13px; color:var(--muted); margin-top:2px; }
+.tl-time { font-size:12px; color:var(--muted); }
+
+/* 图片 */
+.img-grid { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.img-grid img { width:96px; height:96px; object-fit:cover; border-radius:4px; border:1px solid var(--border); cursor:pointer; }
+.upload-box { border:2px dashed var(--border-strong); border-radius:6px; padding:26px; text-align:center; color:var(--muted); font-size:14px; cursor:pointer; margin-top:8px; }
+.upload-box:hover { border-color:var(--primary); color:var(--primary); }
+
+/* 问答 */
+#chat-layout { display:flex; gap:16px; height:calc(100vh - 150px); }
+#conv-side { width:230px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); display:flex; flex-direction:column; flex-shrink:0; }
+#conv-side .head { padding:12px; border-bottom:1px solid var(--border); }
+#conv-list { flex:1; overflow-y:auto; }
+.conv-item { padding:10px 14px; cursor:pointer; font-size:13px; border-left:3px solid transparent; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px; }
+.conv-item:hover { background:#FCF9F4; }
+.conv-item.active { background:var(--primary-soft); border-left-color:var(--primary); color:var(--primary); }
+.conv-item .conv-title { flex:1; overflow:hidden; text-overflow:ellipsis; }
+.conv-del { border:none; background:none; cursor:pointer; font-size:13px; color:var(--muted); padding:2px 6px; border-radius:4px; opacity:0; flex-shrink:0; }
+.conv-item:hover .conv-del { opacity:1; }
+.conv-del:hover { background:var(--primary-soft); color:var(--primary); }
+#chat-main { flex:1; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); display:flex; flex-direction:column; min-width:0; }
+#chat-area { flex:1; overflow-y:auto; padding:18px; }
+.msg { display:flex; margin-bottom:14px; }
+.msg .avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; flex-shrink:0; }
+.msg.user { flex-direction:row-reverse; }
+.msg.user .avatar { background:var(--gold); }
+.msg.assistant .avatar { background:var(--primary); }
+.bubble { max-width:72%; padding:10px 14px; border-radius:8px; line-height:1.7; font-size:14px; white-space:pre-wrap; word-break:break-word; }
+.msg.user .bubble { background:var(--primary); color:#fff; margin-right:8px; }
+.msg.assistant .bubble { background:#FCF9F4; border:1px solid var(--border); margin-left:8px; }
+.bubble .cursor { display:inline-block; width:2px; height:15px; background:var(--primary); vertical-align:-2px; animation:blink .8s infinite; }
+@keyframes blink { 50% { opacity:0; } }
+.refs { margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-strong); font-size:12px; color:var(--muted); }
+.refs .tag { display:inline-block; background:var(--gold-soft); color:#8A6D1D; border-radius:3px; padding:1px 7px; margin:2px 4px 2px 0; font-size:11px; }
+/* 点赞/点踩 —— uiverse 002 checkboxes (heart) 川蜀红改色版
+   借用「outline/filled 双 SVG 叠放 + checked 时 filled 弹出缩放 + celebrate 火花扩散消失」技巧。
+   原片段是粉色心形；这里换成川蜀红拇指，点赞红、点踩灰。 */
+.rate-row { margin-top:8px; font-size:12px; display:flex; align-items:center; gap:6px; }
+.rate-btn {
+  --rate-color: var(--muted);
+  border:none; background:none; cursor:pointer;
+  font-size:12px; color:var(--muted);
+  padding:3px 9px 3px 4px; border-radius:14px;
+  display:inline-flex; align-items:center; gap:5px;
+  transition:color .3s ease, background .3s ease;
+}
+.rate-btn:hover { background:var(--primary-soft); color:var(--primary); }
+.rate-btn.on { --rate-color: var(--primary); color:var(--primary); font-weight:bold; background:var(--primary-soft); }
+.rate-btn.rate-down.on { --rate-color: var(--muted); color:#6B5B4B; background:#EFE9E1; }
+
+/* 双层 SVG 容器 */
+.rate-ico { position:relative; width:19px; height:19px; flex-shrink:0; display:inline-block; }
+.rate-ico svg { position:absolute; inset:0; width:100%; height:100%; }
+.rate-ico .ico-outline { fill:none; stroke:var(--rate-color); stroke-width:1.7px; transition:stroke .3s ease; }
+.rate-ico .ico-filled  { fill:var(--rate-color); display:none; animation:rate-filled .6s; }
+.rate-ico .ico-spark   { display:none; stroke:var(--rate-color); fill:var(--rate-color); stroke-width:1.6px; animation:rate-spark .55s forwards; }
+.rate-btn.on .ico-filled,
+.rate-btn.on .ico-spark { display:block; }
+.rate-btn.rate-down .rate-ico { transform:rotate(180deg); }
+
+@keyframes rate-filled {
+  0%   { transform:scale(0); }
+  25%  { transform:scale(1.25); }
+  50%  { transform:scale(1); filter:brightness(1.4); }
+  100% { transform:scale(1); }
+}
+@keyframes rate-spark {
+  0%   { transform:scale(0); opacity:1; }
+  50%  { opacity:1; filter:brightness(1.5); }
+  100% { transform:scale(1.5); opacity:0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rate-ico .ico-filled, .rate-ico .ico-spark { animation:none !important; }
+}
+#chips { padding:0 18px 8px; display:flex; gap:8px; flex-wrap:wrap; }
+.chip { padding:4px 12px; background:var(--primary-soft); color:var(--primary); border-radius:14px; font-size:12px; cursor:pointer; border:none; }
+.chip:hover { background:#F0D9D3; }
+#input-bar { padding:10px 14px 14px; display:flex; gap:10px; border-top:1px solid var(--border); }
+#question-input { flex:1; }
+
+/* 统计卡 */
+.stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
+.stat-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow); }
+.stat-num { font-size:30px; font-weight:bold; font-family:Georgia,serif; }
+.stat-label { color:var(--muted); font-size:13px; margin-top:4px; }
+.stat-card.red { border-top:3px solid var(--primary); } .stat-card.red .stat-num{color:var(--primary)}
+.stat-card.gold { border-top:3px solid var(--gold); } .stat-card.gold .stat-num{color:#8A6D1D}
+.stat-card.green { border-top:3px solid var(--st-done); } .stat-card.green .stat-num{color:var(--st-done)}
+.dist-bar { display:flex; height:14px; border-radius:7px; overflow:hidden; margin-top:10px; }
+.dist-bar div { height:100%; }
+.legend { display:flex; gap:14px; margin-top:10px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; }
+
+/* ===== 工作台 D5 美化：欢迎横幅 + 大卡片快捷入口 ===== */
+.hero-banner { background:linear-gradient(135deg,var(--primary-dark) 0%,var(--primary) 55%,#C0392B 100%); border-radius:10px; padding:26px 30px; color:#F6EAE2; margin-bottom:22px; position:relative; overflow:hidden; box-shadow:var(--shadow); }
+.hero-banner::after { content:'蜀'; position:absolute; right:-14px; top:-30px; font-size:130px; font-family:"Songti SC",serif; opacity:.12; color:#fff; }
+.hero-banner h2 { font-size:22px; letter-spacing:2px; margin-bottom:8px; }
+.hero-banner .hero-sub { font-size:13px; opacity:.9; line-height:1.7; }
+.hero-banner .hero-date { position:absolute; right:24px; top:22px; font-size:12px; opacity:.85; text-align:right; line-height:1.8; }
+
+/* 快捷入口 —— uiverse 003 buttons (bubbles) 川蜀红改色版
+   借用「两颗对角气泡 scale(0→1) 扩散填充 + 文字反色」技巧。
+   原片段是紫色 --c2；这里换成 --primary，实现「默认白底 → 悬停/选中红底」切换。 */
+.quick-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+.quick-card {
+  --qc-fill: var(--primary);
+  display:flex; align-items:center; gap:16px;
+  padding:20px 18px;
+  background:var(--card);
+  border:2px solid var(--border);
+  border-radius:10px;
+  text-decoration:none; color:var(--ink);
+  box-shadow:var(--shadow);
+  position:relative; overflow:hidden;
+  isolation:isolate;
+  transition:transform .3s cubic-bezier(.83,0,.17,1), box-shadow .3s ease, border-color .3s ease;
+}
+/* 两颗气泡：左上 + 右下，hover 时 scale 0→1 铺满整卡 */
+.quick-card::before,
+.quick-card::after {
+  content:"";
+  width:150%; aspect-ratio:1/1;
+  scale:0;
+  background:var(--qc-fill);
+  border-radius:50%;
+  position:absolute;
+  translate:-50% -50%;
+  z-index:-1;
+  transition:scale 1000ms cubic-bezier(.76,0,.24,1);
+}
+.quick-card::before { top:0; left:0; }
+.quick-card::after  { top:100%; left:100%; }
+
+/* 卡片内文字统一过渡，气泡铺满后反色为白 */
+.quick-card .qc-name,
+.quick-card .qc-desc,
+.quick-card .qc-arrow {
+  position:relative; z-index:1;
+  transition:color 700ms cubic-bezier(.83,0,.17,1);
+}
+.quick-card .qc-icon {
+  width:64px; height:64px; border-radius:12px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:34px; flex-shrink:0;
+  position:relative; z-index:1;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);
+  transition:transform .3s cubic-bezier(.83,0,.17,1), box-shadow .3s ease;
+}
+.quick-card .qc-name { font-size:16px; font-weight:700; margin-bottom:3px; }
+.quick-card .qc-desc { font-size:12px; color:var(--muted); line-height:1.6; }
+.quick-card .qc-arrow { position:absolute; right:14px; bottom:10px; font-size:18px; color:var(--border-strong); transition:transform .3s ease, color .5s ease; }
+
+/* 选中前白色 → 选中/悬停后红色 */
+.quick-card:hover,
+.quick-card:focus-visible,
+.quick-card.qc-on {
+  transform:translateY(-4px);
+  border-color:var(--gold);
+  box-shadow:0 10px 28px rgba(123,36,28,.28);
+}
+.quick-card:hover::before, .quick-card:hover::after,
+.quick-card:focus-visible::before, .quick-card:focus-visible::after,
+.quick-card.qc-on::before, .quick-card.qc-on::after { scale:1; }
+
+.quick-card:hover .qc-name, .quick-card:hover .qc-desc, .quick-card:hover .qc-arrow,
+.quick-card:focus-visible .qc-name, .quick-card:focus-visible .qc-desc, .quick-card:focus-visible .qc-arrow,
+.quick-card.qc-on .qc-name, .quick-card.qc-on .qc-desc, .quick-card.qc-on .qc-arrow { color:#FFF6EC; }
+
+.quick-card:hover .qc-icon,
+.quick-card.qc-on .qc-icon {
+  transform:scale(1.08) rotate(-4deg);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.5), 0 0 0 3px rgba(255,255,255,.22);
+}
+.quick-card:hover .qc-arrow, .quick-card.qc-on .qc-arrow { transform:translateX(4px); }
+.quick-card:active { transform:translateY(-2px) scale(.985); filter:brightness(.95); }
+@media (prefers-reduced-motion: reduce) {
+  .quick-card, .quick-card::before, .quick-card::after,
+  .quick-card .qc-icon, .quick-card .qc-arrow { transition-duration:.01ms !important; }
+}
+/* 图标底色调（各卡保留自己的图标渐变；气泡填充色统一走川蜀红，不再各自改边框色） */
+.qc-1 .qc-icon{background:linear-gradient(135deg,#E74C3C,#922B21)}
+.qc-2 .qc-icon{background:linear-gradient(135deg,#F39C12,#B9770E)}
+.qc-3 .qc-icon{background:linear-gradient(135deg,#2980B9,#1F3864)}
+.qc-4 .qc-icon{background:linear-gradient(135deg,#27AE60,#1E8449)}
+.qc-5 .qc-icon{background:linear-gradient(135deg,#8E44AD,#6C3483)}
+.qc-6 .qc-icon{background:linear-gradient(135deg,#16A085,#0E6655)}
+@media (max-width:900px){ .quick-grid{grid-template-columns:1fr 1fr} }
+@media (max-width:600px){ .quick-grid{grid-template-columns:1fr} }
+
+/* 弹窗 */
+.modal-mask { position:fixed; inset:0; background:rgba(44,33,24,.45); display:flex; align-items:center; justify-content:center; z-index:200; }
+.modal { background:#fff; border-radius:8px; padding:22px; width:440px; max-width:92vw; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+.modal h3 { font-size:16px; margin-bottom:14px; border-left:3px solid var(--primary); padding-left:10px; }
+.modal .btns { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+
+/* 通知 */
+.notify-item { display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border); font-size:14px; }
+.notify-time { color:var(--muted); font-size:12px; flex-shrink:0; margin-left:12px; }
+
+/* 登录 */
+#login-view { position:fixed; inset:0; background:linear-gradient(160deg,var(--primary-dark) 0%, #5E1A15 55%, #7B241C 100%); display:flex; align-items:center; justify-content:center; }
+.login-card { background:var(--bg); border-radius:10px; padding:40px 44px; width:380px; box-shadow:0 16px 48px rgba(0,0,0,.35); }
+.login-seal { width:52px; height:52px; background:var(--primary); border:3px solid var(--gold); border-radius:8px; display:flex; align-items:center; justify-content:center; font-family:"Songti SC",serif; font-size:26px; color:#F6EAE2; margin:0 auto 14px; font-weight:bold; }
+.login-card h1 { text-align:center; font-size:20px; letter-spacing:3px; }
+.login-card .sub { text-align:center; color:var(--muted); font-size:13px; margin:6px 0 22px; }
+.login-tabs { display:flex; margin-bottom:16px; border-bottom:2px solid var(--border); }
+.login-tabs div { flex:1; text-align:center; padding:10px; cursor:pointer; font-size:14px; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-2px; }
+.login-tabs div.active { color:var(--primary); border-bottom-color:var(--primary); font-weight:600; }
+.login-card input {
+  width:100%; padding:11px 13px;
+  border:2px solid var(--border-strong); border-top:none; border-bottom:none;
+  border-radius:0; margin-bottom:16px; font-size:14px; outline:none;
+  box-shadow:5px 5px 0px 0px var(--border-strong);
+  transition:box-shadow .5s ease, border-color .35s ease;
+}
+.login-card input:hover { border-color:var(--primary); box-shadow:5px 5px 0px 0px rgba(169,50,38,.35); }
+.login-card input:focus { border-color:var(--primary); box-shadow:none; background:#FFFDFB; }
+.login-card .btn-primary { width:100%; padding:11px; font-size:15px; letter-spacing:4px; margin-top:4px; }
+.login-card .tip { margin-top:14px; font-size:12px; color:var(--muted); line-height:1.7; text-align:center; }
+.empty-tip { text-align:center; color:var(--muted); padding:50px 20px; font-size:14px; line-height:2; }
+@media (max-width:900px){ .stat-grid{grid-template-columns:repeat(2,1fr)} .form-row{flex-direction:column;gap:0} #chat-layout{flex-direction:column;height:auto} #conv-side{width:100%;max-height:160px} }
+/* ============ 考试工坊（优化丰富期） ============ */
+.exam-tpl-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-top:8px; }
+.exam-tpl-card { background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:14px; cursor:pointer; transition:all .18s ease; position:relative; }
+.exam-tpl-card:hover { transform:translateY(-2px); box-shadow:var(--shadow); border-color:var(--border-strong); }
+.exam-tpl-card.selected { border-color:var(--primary); box-shadow:0 0 0 1px var(--primary), 0 4px 14px rgba(169,50,38,.18); background:var(--primary-soft); }
+
+/* ============ 个人主页（优化丰富期） ============ */
+.kc-input { flex:1; min-width:120px; padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius); font-size:13px; background:#fff; color:var(--ink); }
+.kc-input:focus { border-color:var(--primary); outline:none; box-shadow:0 0 0 2px var(--primary-soft); }
+.kc-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; margin-top:10px; }
+.kc-card { background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:13px 14px; cursor:pointer; transition:all .18s ease; border-left:3px solid var(--primary); }
+.kc-card:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+.kc-card .kc-title { font-weight:600; color:var(--ink); font-size:14px; margin-bottom:6px; }
+.kc-card .kc-meta { font-size:12px; color:var(--muted); display:flex; gap:10px; flex-wrap:wrap; }
+.kc-tags { display:flex; gap:8px; margin:8px 0 4px; flex-wrap:wrap; }
+.kc-tag { padding:5px 14px; border-radius:20px; border:1px solid var(--border); background:#fff; color:var(--ink); cursor:pointer; font-size:13px; transition:all .15s; }
+.kc-tag.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.badge.lv-轻微 { background:rgba(76,175,80,.15); color:#3a8a3e; }
+.badge.lv-一般 { background:rgba(255,193,7,.18); color:#a07c00; }
+.badge.lv-较大 { background:rgba(255,112,67,.18); color:#d2542e; }
+.badge.lv-重大 { background:rgba(169,50,38,.16); color:var(--primary); }
+.badge.st-待处理,.badge.st-待审核 { background:rgba(255,112,67,.16); color:#d2542e; }
+.badge.st-处理中,.badge.st-整改中 { background:rgba(33,150,243,.14); color:#1d7fc4; }
+.badge.st-待验收 { background:rgba(156,39,176,.14); color:#8e2aa0; }
+.badge.st-已闭环,.badge.st-已入库 { background:rgba(76,175,80,.16); color:#3a8a3e; }
+.badge.st-已驳回 { background:rgba(120,120,120,.16); color:#666; }
+.exam-tpl-card.selected::before { content:'✓'; position:absolute; top:-8px; right:-8px; width:22px; height:22px; background:var(--primary); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; box-shadow:0 2px 6px rgba(169,50,38,.35); }
+.exam-tpl-name { font-weight:700; font-size:14px; color:var(--ink); }
+.exam-tpl-desc { font-size:12px; color:var(--muted); margin:6px 0; min-height:32px; }
+.exam-tpl-meta { font-size:12px; color:var(--primary-dark); background:var(--gold-soft); border:1px solid var(--gold); border-radius:4px; padding:3px 8px; display:inline-block; }
+.exam-group { font-size:14px; font-weight:700; color:var(--primary-dark); margin:14px 0 8px; padding-left:10px; border-left:3px solid var(--gold); }
+.exam-q { padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:8px; }
+.exam-q-head { font-weight:600; font-size:13.5px; }
+.exam-score { color:var(--muted); font-weight:400; font-size:12px; }
+.exam-opts { font-size:13px; color:var(--ink); margin:6px 0 4px; line-height:1.8; }
+.exam-ans { color:var(--primary); font-weight:700; font-size:13px; margin-top:4px; }
+.exam-exp { color:var(--muted); font-size:12px; margin-top:2px; line-height:1.6; }
+/* ============ 知识贡献（优化丰富期，uiverse 003/004 川蜀红适配） ============ */
+/* uiverse 003 bubbles 按钮 → 川蜀红（通过=红/驳回=灰/预筛=描边） */
+.kc-bubbles {
+  --c1: #fff; --c2: var(--primary); --size-letter: 14px;
+  padding: 0.55em 1.4em; font-size: var(--size-letter);
+  background-color: transparent; border: calc(var(--size-letter) / 6) solid var(--c2);
+  border-radius: 0.3em; cursor: pointer; overflow: hidden; position: relative;
+  transition: 300ms cubic-bezier(0.83, 0, 0.17, 1);
+}
+.kc-bubbles > .text { font-weight: 700; color: var(--c2); position: relative; z-index: 1; transition: color 700ms cubic-bezier(0.83, 0, 0.17, 1); }
+.kc-bubbles::before, .kc-bubbles::after { content: ""; width: 150%; aspect-ratio: 1/1; scale: 0; transition: 1000ms cubic-bezier(0.76, 0, 0.24, 1); background-color: var(--c2); border-radius: 50%; position: absolute; translate: -50% -50%; }
+.kc-bubbles::before { top: 0; left: 0; }
+.kc-bubbles::after { top: 100%; left: 100%; }
+.kc-bubbles:hover > .text { color: var(--c1); }
+.kc-bubbles:hover::before, .kc-bubbles:hover::after { scale: 1; }
+.kc-bubbles:active { scale: 0.98; filter: brightness(0.9); }
+.kc-bubbles.gray { --c2: #7F8C8D; }
+.kc-bubbles:disabled { opacity: .45; cursor: not-allowed; }
+/* uiverse 004 neon-shadow input → 川蜀红 */
+.kc-input-container { position: relative; }
+.kc-input { padding: 10px; height: 40px; width: 100%; box-sizing: border-box; border: 2px solid var(--primary); border-top: none; border-bottom: none; font-size: 14px; background: transparent; outline: none; box-shadow: 6px 6px 0px 0px var(--primary); transition: all 0.4s; color: var(--ink); }
+.kc-input:focus { box-shadow: none; transition: all 0.4s; }
+.kc-label { position: absolute; top: 10px; left: 10px; color: var(--primary-dark); transition: all 0.4s; transform: scale(0); z-index: -1; font-size: 13px; background: #fff; padding: 0 4px; }
+.kc-input-container .kc-topline { position: absolute; content: ""; background-color: var(--primary); width: 0%; height: 2px; right: 0; top: 0; transition: all 0.4s; }
+.kc-input-container .kc-underline { position: absolute; content: ""; background-color: var(--primary); width: 0%; height: 2px; right: 0; bottom: 0; transition: all 0.4s; }
+.kc-input-container input:focus ~ .kc-topline { width: 35%; transition: all 0.4s; }
+.kc-input-container input:focus ~ .kc-underline { width: 100%; transition: all 0.4s; }
+.kc-input-container input:focus ~ .kc-label { top: -11px; transform: scale(1); transition: all 0.4s; }
+/* 预筛结果卡片 */
+.kc-preview { border-radius: var(--radius); padding: 12px 14px; margin-top: 10px; font-size: 13px; }
+.kc-preview.pass { background: #16a34a14; border: 1px solid #16a34a44; }
+.kc-preview.reject { background: #dc262610; border: 1px solid #dc262644; }
+.kc-preview.review { background: #d9770610; border: 1px solid #d9770644; }
+.kc-preview .tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-weight: 700; font-size: 12px; color: #fff; }
+.kc-preview.pass .tag { background: #16a34a; }
+.kc-preview.reject .tag { background: #dc2626; }
+.kc-preview.review .tag { background: #d97706; }
+.kc-tl { border-left: 2px solid var(--line); margin: 10px 0 0 8px; padding-left: 14px; }
+.kc-tl div { position: relative; padding: 4px 0; font-size: 13px; color: var(--muted); }
+.kc-tl div::before { content: ""; position: absolute; left: -19px; top: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+</style>
+</head>
+<body>
+
+<!-- ============ 登录 ============ -->
+<div id="login-view">
+  <div class="login-card">
+    <div class="login-seal">蜀</div>
+    <h1>蜀道安全助手</h1>
+    <div class="sub">智能安全管理平台 · AI 赋能隐患排查闭环</div>
+    <div class="login-tabs"><div id="tab-login" class="active">登 录</div><div id="tab-register">注册账号</div></div>
+    <div id="login-fields">
+      <input id="login-user" placeholder="用户名">
+      <input id="login-pass" type="password" placeholder="密码">
+      <button class="btn-primary" id="login-btn">登 录</button>
+    </div>
+    <div id="register-fields" class="hidden">
+      <input id="reg-user" placeholder="用户名（2-64 位，支持中文/字母/数字/下划线）">
+      <input id="reg-pass" type="password" placeholder="密码（6-64 位）">
+      <input id="reg-name" placeholder="真实姓名（可选）">
+      <button class="btn-primary" id="reg-btn">注 册</button>
+    </div>
+    <div class="tip">注册用户为普通员工；管理员/安全员由系统初始化。</div>
+  </div>
+</div>
+
+<!-- ============ 主界面 ============ -->
+<div id="app-view" class="hidden">
+  <div id="topbar">
+    <div class="seal">蜀</div>
+    <div class="brand">蜀道安全助手</div>
+    <a href="#/dashboard" class="nav-item" data-nav="dashboard">工作台<span class="nav-glitch"></span></a>
+    <a href="#/hazards" class="nav-item" data-nav="hazards">隐患管理<span class="nav-glitch"></span></a>
+    <a href="#/chat" class="nav-item" data-nav="chat">AI 助手<span class="nav-glitch"></span></a>
+    <a href="#/ppt" class="nav-item" data-nav="ppt">PPT 工坊<span class="nav-glitch"></span></a>
+    <a href="#/notifications" class="nav-item" data-nav="notifications">消息 <span id="notify-badge"></span><span class="nav-glitch"></span></a>
+    <a href="#/exam" class="nav-item" data-nav="exam">考试工坊<span class="nav-glitch"></span></a>
+    <a href="#/kb-contrib" class="nav-item" data-nav="kb-contrib">贡献知识<span class="nav-glitch"></span></a>
+    <a href="#/profile" class="nav-item" data-nav="profile">个人主页<span class="nav-glitch"></span></a>
+    <div class="topbar-right">
+      <img id="user-avatar" class="top-avatar" src="" alt="头像">
+      <span id="user-name"></span>
+      <span class="role-tag" id="user-role"></span>
+      <button class="btn-ghost" id="profile-btn">👤 个人主页</button>
+      <button class="btn-ghost" id="logout-btn">退出</button>
+    </div>
+  </div>
+
+  <div id="main">
+
+    <!-- 工作台 -->
+    <div class="page" id="page-dashboard">
+      <!-- 欢迎横幅（D5 美化） -->
+      <div class="hero-banner">
+        <h2 id="hero-greet">👋 你好，欢迎回来</h2>
+        <div class="hero-sub" id="hero-sub">蜀道智能安全助手 · 隐患闭环 / AI 问答 / PPT 工坊 一站式平台</div>
+        <div class="hero-date" id="hero-date"></div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card red"><div class="stat-num" id="st-total">-</div><div class="stat-label">隐患总数</div></div>
+        <div class="stat-card gold"><div class="stat-num" id="st-pending">-</div><div class="stat-label">未闭环</div></div>
+        <div class="stat-card green"><div class="stat-num" id="st-rate">-</div><div class="stat-label">整改率</div></div>
+        <div class="stat-card"><div class="stat-num" id="st-trend7">-</div><div class="stat-label">近 7 天新增</div></div>
+      </div>
+      <!-- 快捷入口大卡片（D5 美化：全部页面入口 + 卡通图标） -->
+      <div class="card">
+        <h3>🧭 快捷入口</h3>
+        <div class="quick-grid">
+          <a href="#/hazards/new" class="quick-card qc-1">
+            <div class="qc-icon">⛑️</div>
+            <div><div class="qc-name">上报隐患</div><div class="qc-desc">H01 · 文字 + 图片 + AI 识别一键上报</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/hazards" class="quick-card qc-2">
+            <div class="qc-icon">🔍</div>
+            <div><div class="qc-name">隐患管理</div><div class="qc-desc">H02-H06 · 列表 / 派单 / 整改 / 验收闭环</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/chat" class="quick-card qc-3">
+            <div class="qc-icon">🤖</div>
+            <div><div class="qc-name">AI 安全助手</div><div class="qc-desc">A01-A07 · RAG 知识库问答 + 引用来源</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/ppt" class="quick-card qc-4">
+            <div class="qc-icon">🐼</div>
+            <div><div class="qc-name">PPT 工坊</div><div class="qc-desc">P01-P07 · 输入主题，AI 一键生成课件</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/notifications" class="quick-card qc-5">
+            <div class="qc-icon">🔔</div>
+            <div><div class="qc-name">消息通知</div><div class="qc-desc">H08 · 派单 / 整改 / 验收流转提醒</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/hazards?mine=1" class="quick-card qc-6">
+            <div class="qc-icon">📋</div>
+            <div><div class="qc-name">我的上报</div><div class="qc-desc">查看我上报的隐患处理进度</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/exam" class="quick-card qc-7">
+            <div class="qc-icon">📝</div>
+            <div><div class="qc-name">考试工坊</div><div class="qc-desc">提示词/文档 → AI 出卷 → 导出 PDF/Word/MD</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/kb-contrib" class="quick-card qc-8">
+            <div class="qc-icon">📚</div>
+            <div><div class="qc-name">贡献知识</div><div class="qc-desc">上传安全知识 → 管理员审核 → 增量入知识库</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+          <a href="#/profile" class="quick-card qc-9">
+            <div class="qc-icon">👤</div>
+            <div><div class="qc-name">个人主页</div><div class="qc-desc">资料维护 + 查看我的知识 / 隐患贡献</div></div>
+            <div class="qc-arrow">›</div>
+          </a>
+        </div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="border:none;padding:0;margin:0">📚 政策文件</h3>
+          <input type="text" id="kb-search" placeholder="🔍 搜索政策文件…" style="width:220px;font-size:13px">
+        </div>
+        <div id="kb-cats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;max-height:420px;overflow-y:auto;padding-right:4px">
+          <div class="empty-tip">加载中…</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>📊 隐患等级分布</h3>
+        <div id="level-dist" class="legend"></div>
+        <div class="dist-bar" id="level-bar"></div>
+      </div>
+    </div>
+
+    <!-- 隐患列表 -->
+    <div class="page" id="page-hazards">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div class="page-title">隐患管理</div><div class="page-sub">上报 → 派单 → 整改 → 验收 全流程闭环</div></div>
+        <a href="#/hazards/new" class="btn btn-primary">＋ 上报隐患</a>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="filter-bar">
+          <select id="f-status"><option value="">全部状态</option><option>待处理</option><option>处理中</option><option>待验收</option><option>已闭环</option><option>已驳回</option></select>
+          <select id="f-level"><option value="">全部等级</option><option>重大</option><option>较大</option><option>一般</option><option>轻微</option></select>
+          <input type="text" id="f-type" placeholder="隐患类型">
+          <button class="btn btn-outline btn-sm" id="f-search">查 询</button>
+          <button class="btn btn-outline btn-sm" id="f-mine">只看我的</button>
+          <span style="margin-left:auto" id="haz-total" class="hint"></span>
+        </div>
+        <table>
+          <thead><tr><th>标题</th><th>等级</th><th>状态</th><th>位置</th><th>上报人</th><th>时间</th><th>操作</th></tr></thead>
+          <tbody id="haz-tbody"></tbody>
+        </table>
+        <div class="pager"><button class="btn btn-outline btn-sm" id="haz-prev">上一页</button><span id="haz-page">第 1 页</span><button class="btn btn-outline btn-sm" id="haz-next">下一页</button></div>
+      </div>
+    </div>
+
+    <!-- 隐患上报 -->
+    <div class="page" id="page-hazards-new">
+      <div class="page-title">隐患上报</div>
+      <div class="page-sub">H01 · 支持文字描述、图片上传、位置定位、AI 图片识别</div>
+      <div class="card">
+        <div class="form-row">
+          <div><label>隐患标题 *</label><input type="text" id="h-title" placeholder="如：3号脚手架横杆缺失"></div>
+          <div><label>隐患等级 *</label><select id="h-level"><option value="一般">一般</option><option value="较大">较大</option><option value="重大">重大</option><option value="轻微">轻微</option></select></div>
+        </div>
+        <div class="form-row">
+          <div><label>隐患类型</label><input type="text" id="h-type" placeholder="如：高处作业 / 临时用电 / 消防"></div>
+          <div><label>位置</label><input type="text" id="h-loc" placeholder="如：2 号桥墩施工区"></div>
+        </div>
+        <label>隐患描述 *</label><textarea id="h-desc" placeholder="请描述隐患具体情况（≥5 字）"></textarea>
+        <label>现场图片（可多张）</label>
+        <div class="img-grid" id="h-imgs"></div>
+        <div class="upload-box" id="h-upload">＋ 点击选择图片（jpg/png/webp，≤10MB）</div>
+        <input type="file" id="h-file" accept="image/*" multiple class="hidden">
+        <div id="h-ai-result" class="card" style="margin-top:14px;display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <h3 style="margin:0">🤖 AI 识别结果</h3>
+            <button class="btn btn-gold btn-sm" id="h-ai-fill" title="把 AI 分析结果填入下方隐患描述框">📋 一键填入描述</button>
+          </div>
+          <div id="h-ai-body"></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:18px">
+          <button class="btn btn-primary" id="h-submit">提交上报</button>
+          <button class="btn btn-gold" id="h-ai-btn">🤖 AI 识别隐患（视觉智能体）</button>
+        </div>
+        <div class="hint">提示：先上传图片，再点「AI 识别隐患」自动分析风险并预填表单。</div>
+      </div>
+    </div>
+
+    <!-- 隐患详情 -->
+    <div class="page" id="page-hazard-detail">
+      <a href="#/hazards" class="btn btn-outline btn-sm" style="margin-bottom:14px">← 返回列表</a>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <h2 id="d-title" style="font-size:20px"></h2>
+            <div style="margin-top:10px" id="d-badges"></div>
+          </div>
+          <div id="d-actions" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+        <p id="d-desc" style="margin-top:14px;line-height:1.8;font-size:14px"></p>
+        <div id="d-imgs" class="img-grid"></div>
+      </div>
+      <div class="card">
+        <h3>处理进度时间线</h3>
+        <div class="timeline" id="d-timeline"></div>
+      </div>
+    </div>
+
+    <!-- AI 问答 -->
+    <div class="page" id="page-chat">
+      <div class="page-title">AI 安全助手</div>
+      <div class="page-sub">基于企业安全知识库的智能问答（RAG + 流式输出 + 引用来源）</div>
+      <div id="chat-layout">
+        <div id="conv-side">
+          <div class="head"><button class="btn btn-primary btn-sm" style="width:100%" id="c-new">＋ 新建会话</button></div>
+          <div id="conv-list"></div>
+        </div>
+        <div id="chat-main">
+          <div id="chat-area"><div class="empty-tip">👋 你好！我是蜀道安全助手。<br>可问我安全生产问题，例如：<br>「高处作业有什么安全要求？」「防汛应急预案如何分级？」</div></div>
+          <div id="chips"></div>
+          <div id="input-bar"><input type="text" id="question-input" placeholder="输入问题，回车发送…"><button class="btn btn-primary" id="send-btn">发 送</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 通知 -->
+    <div class="page" id="page-notifications">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div class="page-title">消息通知</div><div class="page-sub">H08 · 隐患流转相关通知</div></div>
+        <button class="btn btn-outline btn-sm" id="notify-clear">清空全部</button>
+      </div>
+      <div class="card" id="notify-list" style="margin-top:16px"></div>
+    </div>
+
+    <!-- PPT 工坊 -->
+    <div class="page" id="page-ppt">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div class="page-title">PPT 工坊</div><div class="page-sub">P01–P07 · 输入主题 → AI 生成大纲 → 一键生成专业 PPT</div></div>
+      </div>
+      <div class="card">
+        <h3>新建任务</h3>
+        <div class="form-row">
+          <div><label>讲座主题 *</label><input type="text" id="ppt-topic" placeholder="如：施工现场高处作业安全 / 临时用电安全"></div>
+          <div><label>模板风格（P04 + 自定义上传）</label>
+            <select id="ppt-template"><option value="business">商务（深蓝金）</option></select>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button class="btn btn-primary" id="ppt-create">🤖 生成大纲</button>
+          <button class="btn" id="ppt-tpl-pick" style="border:1px solid var(--line);background:#fff">📤 上传模板（≤20MB）</button>
+          <input type="file" id="ppt-tpl-file" accept=".pptx" class="hidden">
+          <span class="hint" style="align-self:center">AI 生成大纲约 10-30s；免费额度用尽后自动降级本地生成</span>
+        </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)">
+          <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📄 或上传 .md 文档，AI 按文档内容生成大纲（领导优化：政策文件一键转课件）</div>
+          <input type="file" id="ppt-md-file" accept=".md,text/markdown" class="hidden">
+          <button class="btn" id="ppt-md-pick" style="border:1px solid var(--line);background:#fff">📁 选择 .md 文件</button>
+          <span id="ppt-md-name" style="font-size:13px;color:var(--muted);margin-left:10px"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>我的任务</h3>
+        <table>
+          <thead><tr><th>主题</th><th>模板</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody id="ppt-tbody"></tbody>
+        </table>
+        <div class="empty-tip" id="ppt-empty" style="display:none">暂无任务，先在上面输入主题创建一个吧</div>
+      </div>
+    </div>
+
+    <!-- 考试工坊 -->
+    <div class="page" id="page-exam">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div class="page-title">考试工坊</div><div class="page-sub">提示词/文档输入 → AI 一键出卷（含参考答案）→ 导出 PDF / Word / MD</div></div>
+      </div>
+      <div class="card">
+        <h3>出卷设置</h3>
+        <div class="form-row">
+          <div style="flex:1.2"><label>试卷名称 *</label><input type="text" id="exam-title" placeholder="如：高处作业安全知识测试"></div>
+          <div><label>导出格式</label>
+            <select id="exam-format"><option value="md">Markdown (.md)</option><option value="docx">Word (.docx)</option><option value="pdf">PDF (.pdf)</option></select>
+          </div>
+        </div>
+        <div style="margin-top:10px"><label>试卷模板（决定题型分布与总分）</label>
+          <div class="exam-tpl-grid" id="exam-tpl-grid"></div>
+        </div>
+        <div style="margin-top:12px"><label>出题要求 / 文档内容 *（≥10 字）</label>
+          <textarea id="exam-input" rows="4" placeholder="如：围绕高处作业安全带使用、临边防护、脚手架验收等出题；或点击下方上传 .md/.txt 文档自动填入"></textarea>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
+            <button class="btn" id="exam-file-pick" style="border:1px solid var(--line);background:#fff">📁 上传 .md/.txt 文档</button>
+            <input type="file" id="exam-file" accept=".md,.txt,text/markdown,text/plain" class="hidden">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer">
+              <input type="checkbox" id="exam-rag" checked> 引用知识库依据（RAG 增强）
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button class="btn btn-primary" id="exam-create">🎓 生成试卷</button>
+          <span class="hint" style="align-self:center">AI 出卷约 30-60s，请耐心等待；生成后可在下方预览并下载</span>
+        </div>
+      </div>
+      <div class="card hidden" id="exam-result-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0">📄 试卷预览</h3>
+          <button class="btn btn-gold btn-sm" id="exam-download">⬇️ 下载试卷（格式见上方选择）</button>
+        </div>
+        <div id="exam-preview" style="margin-top:12px"></div>
+      </div>
+      <div class="card">
+        <h3>我的试卷</h3>
+        <table>
+          <thead><tr><th>试卷名称</th><th>模板</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody id="exam-tbody"></tbody>
+        </table>
+        <div class="empty-tip" id="exam-empty" style="display:none">暂无试卷，先在上面出卷吧</div>
+      </div>
+    </div>
+
+    <!-- 知识贡献 -->
+    <div class="page" id="page-kb-contrib">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div><div class="page-title">贡献知识</div><div class="page-sub">全员上传 → 管理员审核 → 审核通过后增量入知识库（不重建向量库）</div></div>
+      </div>
+      <div class="card">
+        <h3>📤 提交知识</h3>
+        <div class="form-row">
+          <div style="flex:1.2">
+            <label>知识标题 *</label>
+            <div class="kc-input-container">
+              <input class="kc-input" id="kc-title" type="text" placeholder="如：塔吊安装拆卸安全操作规程">
+              <span class="kc-topline"></span><span class="kc-underline"></span>
+              <label class="kc-label">知识标题</label>
+            </div>
+          </div>
+          <div>
+            <label>知识类别</label>
+            <select id="kc-doc-type">
+              <option value="laws">法规/制度</option>
+              <option value="procedures">操作规程</option>
+              <option value="plans">应急预案</option>
+              <option value="cases">事故案例</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:12px"><label>知识文件 *（md/txt/docx/pdf，≤10MB）</label>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+            <button class="btn" id="kc-file-pick" style="border:1px solid var(--line);background:#fff">📁 选择文件</button>
+            <input type="file" id="kc-file" accept=".md,.markdown,.txt,.docx,.pdf" class="hidden">
+            <span id="kc-file-name" style="font-size:13px;color:var(--muted)">未选择文件</span>
+          </div>
+          <div style="margin-top:10px"><label>文件简介 *（2-500 字，由你编写）</label>
+            <textarea id="kc-intro" rows="3" placeholder="简述这份文件是什么、涵盖哪些内容、适用于什么场景。审核员会结合你的简介 + AI 预筛 + 判定标准做入库判断。"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button class="kc-bubbles" id="kc-submit"><span class="text">📤 提交审核</span></button>
+          <span class="hint" style="align-self:center">提交后管理员会收到待审消息；审核结果会以消息形式通知你</span>
+        </div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">📋 贡献记录</h3>
+          <div id="kc-filter" style="display:flex;gap:6px">
+            <button class="btn btn-sm kc-filter-btn" data-s="" style="border:1px solid var(--primary);color:var(--primary);background:#fff">全部</button>
+            <button class="btn btn-sm kc-filter-btn" data-s="待审核">待审核</button>
+            <button class="btn btn-sm kc-filter-btn" data-s="已入库">已入库</button>
+            <button class="btn btn-sm kc-filter-btn" data-s="已驳回">已驳回</button>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>标题</th><th>类别</th><th>状态</th><th>提交人</th><th>提交时间</th><th>操作</th></tr></thead>
+          <tbody id="kc-tbody"></tbody>
+        </table>
+        <div class="empty-tip" id="kc-empty" style="display:none">暂无贡献记录，先在上面提交一条吧</div>
+      </div>
+    </div>
+
+    <!-- 个人主页（优化丰富期） -->
+    <div class="page" id="page-profile">
+      <h2 class="page-title">👤 个人主页</h2>
+      <p class="muted" style="margin-top:-6px">维护你的账户资料，并查看你在系统中的贡献记录</p>
+
+      <!-- 资料卡片 -->
+      <div class="card">
+        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+          <img id="profile-avatar" src="" alt="头像" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid var(--primary);background:var(--bg)">
+          <div>
+            <div style="font-size:18px;font-weight:700;color:var(--ink)" id="profile-username">—</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">角色：<span id="profile-role"></span> ｜ 真实姓名：<span id="profile-realname">—</span></div>
+            <button class="kc-bubbles" id="profile-upload-avatar" style="margin-top:8px"><span class="text">📷 上传头像</span></button>
+            <input type="file" id="profile-avatar-file" accept="image/*" class="hidden">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">账户设置</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <label>用户名</label>
+            <div style="display:flex;gap:8px">
+              <input id="profile-username-input" class="kc-input" placeholder="用户名（2-64字）">
+              <button class="kc-bubbles" id="profile-save-username"><span class="text">保存</span></button>
+            </div>
+          </div>
+          <div>
+            <label>个人邮箱</label>
+            <div style="display:flex;gap:8px">
+              <input id="profile-email-input" class="kc-input" placeholder="name@example.com（可空）">
+              <button class="kc-bubbles" id="profile-save-email"><span class="text">保存</span></button>
+            </div>
+          </div>
+          <div style="grid-column:1/3">
+            <label>修改密码</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input id="profile-old-pwd" type="password" class="kc-input" style="flex:1;min-width:160px" placeholder="原密码">
+              <input id="profile-new-pwd" type="password" class="kc-input" style="flex:1;min-width:160px" placeholder="新密码（≥6位）">
+              <button class="kc-bubbles" id="profile-save-pwd"><span class="text">修改密码</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 贡献记录区（批注 5/6：复用路由，前端美化适配） -->
+      <div class="card">
+        <h3 style="margin-top:0">我的知识贡献</h3>
+        <div id="profile-kc-list" class="kc-card-grid"></div>
+        <div class="empty-tip" id="profile-kc-empty" style="display:none">暂无已入库的知识贡献</div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">我的隐患贡献</h3>
+        <div class="kc-tags" id="profile-hz-tabs"></div>
+        <div id="profile-hz-list" class="kc-card-grid"></div>
+        <div class="empty-tip" id="profile-hz-empty" style="display:none">暂无相关隐患记录</div>
+      </div>
+    </div>
+
+    <!-- 知识库文档阅读器（引用来源查看原件，D5 优化） -->
+    <div class="page" id="page-kb-doc">
+      <a href="javascript:history.back()" class="btn btn-outline btn-sm" style="margin-bottom:14px">← 返回</a>
+      <div class="card" style="min-height:60vh">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3 style="margin:0;max-width:75%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="kb-doc-title">知识库文档</h3>
+          <span class="badge lv-轻微" id="kb-doc-type">原文</span>
+        </div>
+        <div id="kb-doc-body" style="font-size:14px;line-height:1.9;color:var(--ink)"><div class="empty-tip">加载中…</div></div>
+      </div>
+    </div>
+
+    <!-- PPT 大纲编辑弹窗 -->
+    <div class="modal-mask hidden" id="modal-ppt-outline">
+      <div class="modal" style="width:640px">
+        <h3>编辑大纲（P02）</h3>
+        <div class="hint" style="margin-bottom:6px">按 JSON 格式编辑：{"title","sections":[{"name","points":[]}]}，生成时百度会按大纲渲染每页。</div>
+        <textarea id="ppt-outline-json" style="min-height:260px;font-family:monospace;font-size:12px"></textarea>
+        <div class="btns">
+          <button class="btn btn-outline" onclick="closeModal('modal-ppt-outline')">取消</button>
+          <button class="btn btn-primary" id="ppt-outline-save">保存大纲</button>
+          <button class="btn btn-gold" id="ppt-generate">🚀 生成 PPT</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 知识贡献详情 + 审核弹窗 -->
+    <div class="modal-mask hidden" id="modal-kc-detail">
+      <div class="modal" style="width:720px;max-height:82vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3 id="kc-detail-title" style="margin:0">贡献详情</h3>
+          <button class="btn btn-outline btn-sm" onclick="closeModal('modal-kc-detail')">关闭</button>
+        </div>
+        <div id="kc-detail-meta" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px">📄 文件内容（解析自上传文件）</div>
+        <div id="kc-detail-content" style="font-size:13px;line-height:1.8;color:var(--ink);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;max-height:220px;overflow-y:auto"></div>
+        <div style="margin-top:12px"><div style="font-size:13px;font-weight:600;color:var(--ink)">⏱️ 处理进度</div><div class="kc-tl" id="kc-detail-tl"></div></div>
+        <!-- 管理员审核区（admin 且 待审核 才显示） -->
+        <div id="kc-review-area" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="kc-bubbles" id="kc-ai-preview"><span class="text">🤖 AI 预筛</span></button>
+            <button class="kc-bubbles gray" id="kc-std-open"><span class="text">📖 判定标准</span></button>
+            <span class="hint">AI 预筛仅辅助判断，最终以你依据判定标准的决策为准</span>
+          </div>
+          <div id="kc-preview-box"></div>
+          <label style="display:block;margin-top:12px">审核意见</label>
+          <textarea id="kc-review-note" rows="2" placeholder="驳回时必须填写原因（会通知上传者）"></textarea>
+          <div class="btns" style="margin-top:10px">
+            <button class="kc-bubbles" id="kc-approve"><span class="text">✅ 通过入库</span></button>
+            <button class="kc-bubbles gray" id="kc-reject"><span class="text">❌ 驳回</span></button>
+            <button class="btn btn-outline" onclick="closeModal('modal-kc-detail')">关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 判定标准文档弹窗（硬性规章依据，AI 辅助之外的第二重保障） -->
+    <div class="modal-mask hidden" id="modal-kc-standard">
+      <div class="modal" style="width:760px;max-height:82vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0">📖 施工安全领域文件鉴别判定标准</h3>
+          <button class="btn btn-outline btn-sm" onclick="closeModal('modal-kc-standard')">关闭</button>
+        </div>
+        <div id="kc-standard-body" style="margin-top:10px;font-size:13px;line-height:1.8;color:var(--ink)"><div class="empty-tip">加载中…</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 派单弹窗 -->
+<div class="modal-mask hidden" id="modal-assign">
+  <div class="modal">
+    <h3>隐患派单（H04）</h3>
+    <label>责任人 *（安全员）</label>
+    <input type="text" id="a-search" placeholder="🔍 输入 ID 或姓名搜索，如：385 / 小张" style="margin-bottom:8px">
+    <select id="a-assignee" size="8" style="width:100%">
+      <option value="">— 加载中… —</option>
+    </select>
+    <div class="hint" id="a-search-hint">显示安全员列表；搜索框支持按 ID 或姓名精确查找（含 50 名以外的用户）</div>
+    <label>整改期限</label><input type="datetime-local" id="a-due">
+    <div class="btns"><button class="btn btn-outline" onclick="closeModal('modal-assign')">取消</button><button class="btn btn-primary" id="a-submit">确认派单</button></div>
+  </div>
+</div>
+<!-- 整改弹窗 -->
+<div class="modal-mask hidden" id="modal-rectify">
+  <div class="modal">
+    <h3>整改反馈（H05）</h3>
+    <label>整改措施 *</label><textarea id="r-measures" placeholder="描述整改措施（≥5 字）"></textarea>
+    <label>整改后照片</label><input type="file" id="r-file" accept="image/*" multiple>
+    <div class="img-grid" id="r-imgs"></div>
+    <div class="btns"><button class="btn btn-outline" onclick="closeModal('modal-rectify')">取消</button><button class="btn btn-primary" id="r-submit">提交整改</button></div>
+  </div>
+</div>
+<!-- 验收弹窗 -->
+<div class="modal-mask hidden" id="modal-accept">
+  <div class="modal">
+    <h3>隐患验收（H06）</h3>
+    <label>验收意见</label><textarea id="ac-note" placeholder="验收意见（可选）"></textarea>
+    <div class="btns">
+      <button class="btn btn-outline" onclick="closeModal('modal-accept')">取消</button>
+      <button class="btn" id="ac-reject" style="background:#7F8C8D;color:#fff">驳 回</button>
+      <button class="btn btn-primary" id="ac-pass">通过（闭环）</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ 状态 ============ */
+let token = localStorage.getItem('sd_token') || '';
+let me = null; // {id, username, role, real_name}
+let curPage = '';
+let hazPage = 1, hazQuery = {};
+let curConvId = null, streaming = false;
+let uploadUrls = [], rectifyUrls = [], curHazardId = null;
+let lastAiAnalysis = null;  // 最近一次 AI 识别结果（供「一键填入描述」）
+let pendingFiles = [];  // 已选图片的原始 File 引用（上传后 input.files 会被清空，AI 识别依赖此数组）
+let rectifyFiles = [];
+
+/* ============ API ============ */
+async function api(path, options = {}) {
+  const headers = { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch(path, { ...options, headers });
+  if (resp.status === 401) { showLogin(); throw new Error('登录已过期'); }
+  if (!resp.ok) { let d = resp.statusText; try { d = (await resp.json()).detail || d; } catch(e){} throw new Error(d); }
+  return resp;
+}
+
+/* ============ 登录 / 注册 ============ */
+async function applyUserAvatar() {
+  // 右上角头像：从 /api/me/profile 取 avatar（users 表无 avatar，存 user_profiles）
+  const img = document.getElementById('user-avatar');
+  if (!img) return;
+  try {
+    const r = await api('/api/me/profile'); const p = await r.json();
+    if (p.avatar) { img.src = p.avatar; img.classList.add('show'); if (me) me.avatar = p.avatar; }
+    else { img.classList.remove('show'); }
+  } catch(e) { img.classList.remove('show'); }
+}
+function showLogin() { token=''; localStorage.removeItem('sd_token');
+  document.getElementById('login-view').classList.remove('hidden');
+  document.getElementById('app-view').classList.add('hidden'); }
+async function doLogin() {
+  const u = document.getElementById('login-user').value.trim(), p = document.getElementById('login-pass').value;
+  if (!u || !p) return alert('请输入用户名和密码');
+  try {
+    const r = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:u, password:p}) });
+    if (!r.ok) return alert('登录失败：' + ((await r.json()).detail || ''));
+    const d = await r.json();
+    token = d.access_token; me = d.user;
+    localStorage.setItem('sd_token', token);
+    document.getElementById('user-name').textContent = me.real_name || me.username;
+    document.getElementById('user-role').textContent = {admin:'管理员',safety_officer:'安全员',employee:'普通员工'}[me.role] || me.role;
+    applyUserAvatar();
+    enterApp();
+  } catch(e){ alert('网络错误：' + e.message); }
+}
+async function doRegister() {
+  const u = document.getElementById('reg-user').value.trim(), p = document.getElementById('reg-pass').value, n = document.getElementById('reg-name').value.trim();
+  if (!u || !p) return alert('请输入用户名和密码');
+  try {
+    const r = await fetch('/api/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username:u, password:p, real_name:n || undefined}) });
+    if (!r.ok) {
+      // 422 的 detail 是校验错误数组，需格式化（否则显示 [object Object]）
+      let err = '注册失败';
+      try {
+        const d = await r.json();
+        const detail = d.detail;
+        if (Array.isArray(detail)) err += '：' + detail.map(x => {
+          const loc = (x.loc||[]).slice(1).join('.');
+          return (loc ? loc + ' ' : '') + (x.msg || '');
+        }).join('；');
+        else if (typeof detail === 'string') err += '：' + detail;
+      } catch(_){}
+      return alert(err);
+    }
+    alert('注册成功（角色：普通员工），请登录'); switchTab('login');
+  } catch(e){ alert(e.message); }
+}
+function enterApp() {
+  document.getElementById('login-view').classList.add('hidden');
+  document.getElementById('app-view').classList.remove('hidden');
+  loadNotifyCount(); route();
+}
+
+/* ============ 工作台横幅（D5 美化：问候语 + 日期） ============ */
+function renderHero() {
+  const h = new Date().getHours();
+  const greet = h < 6 ? '🌙 夜深了' : h < 9 ? '🌅 早上好' : h < 12 ? '☀️ 上午好' : h < 14 ? '🍚 中午好' : h < 18 ? '🌤️ 下午好' : '🌆 晚上好';
+  document.getElementById('hero-greet').textContent = greet + '，' + (me && me.real_name ? me.real_name : me ? me.username : '朋友') + '！';
+  const d = new Date();
+  const week = ['日','一','二','三','四','五','六'][d.getDay()];
+  document.getElementById('hero-date').innerHTML = d.getFullYear() + ' 年 ' + (d.getMonth()+1) + ' 月 ' + d.getDate() + ' 日<br>星期' + week;
+}
+
+/* ============ 路由 ============ */
+function route() {
+  const hash = location.hash || '#/dashboard';
+  const [_, path, param] = hash.match(/^#\/([^\/?]+)(?:\/([^?]+))?(?:\?(.*))?$/) || ['','dashboard','',''];
+  const qs = new URLSearchParams(hash.split('?')[1] || '');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.nav === path));
+  curPage = path;
+  if (path === 'dashboard') { show('page-dashboard'); renderHero(); loadStats(); loadKbList(); }
+  else if (path === 'hazards' && param === 'new') { show('page-hazards-new'); resetForm(); }
+  else if (path === 'hazards') { show('page-hazards'); hazPage = 1; hazQuery = {}; if (qs.get('mine')) hazQuery.mine = 1; loadHazards(); }
+  else if (path === 'hazard' && param) { show('page-hazard-detail'); curHazardId = parseInt(param,10); loadDetail(); }
+  else if (path === 'chat') { show('page-chat'); loadConvs(); loadChips(); }
+  else if (path === 'ppt') { show('page-ppt'); loadPptTasks(); loadPptTemplates(); }
+  else if (path === 'exam') { show('page-exam'); loadExamTemplates(); loadExamHistory(); }
+  else if (path === 'kb-contrib') { show('page-kb-contrib'); loadKbContribs(); if (param) openKbContribDetail(parseInt(param,10)); }
+  else if (path === 'profile') { show('page-profile'); loadProfile(); }
+  else if (path === 'kb-doc') { show('page-kb-doc'); loadKbDoc(qs.get('path') || ''); }
+  else if (path === 'notifications') { show('page-notifications'); loadNotifies(); }
+  else show('page-dashboard');
+}
+function show(id) { const el = document.getElementById(id); if (el) el.classList.add('active'); }
+
+/* ============ 工作台 ============ */
+async function loadStats() {
+  try {
+    const r = await api('/api/stats/hazards'); const s = await r.json();
+    document.getElementById('st-total').textContent = s.total;
+    document.getElementById('st-pending').textContent = s.pending;
+    document.getElementById('st-rate').textContent = (s.rectify_rate*100).toFixed(0) + '%';
+    const trend7 = (s.trend || []).reduce((a,t)=>a+t.created,0);
+    document.getElementById('st-trend7').textContent = trend7;
+    const dist = s.by_level || {};
+    const colors = {重大:'#922B21',较大:'#E67E22',一般:'#F4D03F',轻微:'#AAB7B8'};
+    const total = s.total || 1;
+    let bar='', legend='';
+    ['重大','较大','一般','轻微'].forEach(lv => {
+      const n = dist[lv] || 0;
+      if (n>0) { bar += `<div style="width:${n/total*100}%;background:${colors[lv]}"></div>`; legend += `<span><i style="background:${colors[lv]}"></i>${lv} ${n}</span>`; }
+    });
+    document.getElementById('level-bar').innerHTML = bar || '<div style="width:100%;background:#eee"></div>';
+    document.getElementById('level-dist').innerHTML = legend || '暂无数据';
+  } catch(e){ console.warn(e); }
+}
+
+/* ============ 隐患列表 ============ */
+async function loadHazards() {
+  const params = new URLSearchParams({ page: hazPage, page_size: 10, ...hazQuery });
+  if (document.getElementById('f-status').value) params.set('status', document.getElementById('f-status').value);
+  if (document.getElementById('f-level').value) params.set('level', document.getElementById('f-level').value);
+  if (document.getElementById('f-type').value.trim()) params.set('hazard_type', document.getElementById('f-type').value.trim());
+  try {
+    const r = await api('/api/hazards?' + params); const d = await r.json();
+    const tbody = document.getElementById('haz-tbody'); tbody.innerHTML = '';
+    (d.items || []).forEach(h => {
+      tbody.innerHTML += `<tr>
+        <td><a href="#/hazard/${h.id}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(h.title)}</a></td>
+        <td><span class="badge lv-${h.level}">${h.level}</span></td>
+        <td><span class="badge ${h.status}">${h.status}</span></td>
+        <td>${esc(h.location || '-')}</td><td>#${h.reporter_id}</td>
+        <td style="font-size:12px;color:var(--muted)">${(h.created_at||'').slice(0,10)}</td>
+        <td><a href="#/hazard/${h.id}" class="btn btn-outline btn-sm">详情</a></td></tr>`;
+    });
+    if (!(d.items||[]).length) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">暂无隐患记录</td></tr>';
+    document.getElementById('haz-total').textContent = `共 ${d.total} 条`;
+    document.getElementById('haz-page').textContent = `第 ${hazPage} 页`;
+  } catch(e){ alert('加载失败：' + e.message); }
+}
+
+/* ============ 上报 ============ */
+function resetForm() {
+  ['h-title','h-type','h-loc','h-desc'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('h-level').value='一般';
+  uploadUrls = []; pendingFiles = []; lastAiAnalysis = null; document.getElementById('h-imgs').innerHTML='';
+  document.getElementById('h-ai-result').style.display='none';
+}
+document.getElementById('h-upload').onclick = () => document.getElementById('h-file').click();
+document.getElementById('h-file').onchange = async (e) => {
+  const files = [...e.target.files];
+  pendingFiles.push(...files);  // 保留原始 File 引用（AI 识别用）
+  for (const f of files) {
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const r = await api('/api/uploads/image', { method:'POST', body: fd });
+      const d = await r.json();
+      uploadUrls.push(d.url);
+      document.getElementById('h-imgs').innerHTML += `<img src="${d.url}" onclick="window.open('${d.url}')">`;
+    } catch(err){ alert('上传失败：' + err.message); }
+  }
+  e.target.value = '';
+};
+document.getElementById('h-ai-btn').onclick = async () => {
+  if (!pendingFiles.length) return alert('请先选择要识别的图片');
+  const btn = document.getElementById('h-ai-btn'); btn.disabled = true; btn.textContent = '🤖 AI 分析中…';
+  const fd = new FormData();
+  fd.append('file', pendingFiles[0]);  // 识别第一张已上传图片
+  fd.append('scene_description', document.getElementById('h-desc').value || '');
+  // 前端超时兜底：视觉专属实例冷启动/响应慢时避免无限等待（120s）
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 120000);
+  try {
+    const r = await api('/api/vision/hazard', { method:'POST', body: fd, signal: ctrl.signal });
+    const d = await r.json();
+    const a = d.analysis || {};
+    lastAiAnalysis = a;  // 保存供「一键填入描述」使用
+    document.getElementById('h-ai-result').style.display = 'block';
+    // A 方案：后端生成的隐患标注图（含像素坐标时返回 boxes_url），优先展示
+    let boxesHtml = '';
+    if (d.boxes_url) boxesHtml = `<div style="margin:10px 0"><img src="${d.boxes_url}" style="max-width:100%;border:1px solid var(--border);border-radius:6px" onclick="window.open('${d.boxes_url}')" alt="隐患标注图"></div>`;
+    // 隐患条目：按等级显示彩色徽章 + 左边框着色（程度词可视化）
+    const hazards = (a.hazards||[]).map(h=>`<div class="hazard-item lv-${esc(h.level||'')}"><span class="badge lv-${esc(h.level||'')}">${esc(h.level||'未分级')}</span> <b>${esc(h.category||'')}</b>：${esc(h.description||'')}<span class="hint">建议：${esc(h.suggestion||'')}</span></div>`).join('');
+    document.getElementById('h-ai-body').innerHTML = boxesHtml + `<div style="margin-bottom:8px">${esc(a.summary||'')}</div>${hazards}`;
+    const first = (a.hazards||[])[0];
+    if (first) { if (first.level) document.getElementById('h-level').value = first.level; if (first.category) document.getElementById('h-type').value = first.category; if (first.description && !document.getElementById('h-desc').value) document.getElementById('h-desc').value = first.description; }
+  } catch(err){ document.getElementById('h-ai-result').style.display='block'; document.getElementById('h-ai-body').innerHTML = '<span style="color:var(--st-pending)">识别失败：' + esc(err.message) + '</span>'; }
+  btn.disabled=false; btn.textContent='🤖 AI 识别隐患（视觉智能体）';
+};
+/* 一键填入描述：把 AI 分析结果（summary + 各隐患条目）拼成文本填入 h-desc */
+document.getElementById('h-ai-fill').onclick = () => {
+  const a = lastAiAnalysis;
+  if (!a || !(a.hazards||[]).length) return alert('请先进行 AI 识别');
+  const lines = [a.summary || ''];
+  (a.hazards||[]).forEach((h,i) => {
+    lines.push(`${i+1}. [${h.level||'未分级'}] ${h.category||''}：${h.description||''}`);
+    if (h.suggestion) lines.push(`   建议：${h.suggestion}`);
+  });
+  document.getElementById('h-desc').value = lines.join('\n');
+  // 联动：标题/等级/类型也已用第一个隐患预填（识别时已做），提示用户可编辑
+  alert('已填入隐患描述框，可手动编辑后提交');
+};
+document.getElementById('h-submit').onclick = async () => {
+  const body = {
+    title: document.getElementById('h-title').value.trim(),
+    description: document.getElementById('h-desc').value.trim(),
+    level: document.getElementById('h-level').value,
+    hazard_type: document.getElementById('h-type').value.trim() || null,
+    location: document.getElementById('h-loc').value.trim() || null,
+    image_urls: uploadUrls.length ? uploadUrls : null,
+  };
+  if (!body.title || !body.description) return alert('标题和描述必填');
+  try {
+    const r = await api('/api/hazards', { method:'POST', body: JSON.stringify(body) });
+    const d = await r.json();
+    alert('上报成功！隐患 #' + d.id);
+    location.hash = '#/hazard/' + d.id;
+  } catch(e){ alert('上报失败：' + e.message); }
+};
+
+/* ============ 详情 ============ */
+async function loadDetail() {
+  try {
+    const r = await api('/api/hazards/' + curHazardId); const h = await r.json();
+    document.getElementById('d-title').textContent = h.title;
+    document.getElementById('d-badges').innerHTML =
+      `<span class="badge lv-${h.level}" style="margin-right:6px">${h.level}</span><span class="badge ${h.status}">${h.status}</span>` +
+      `<span style="margin-left:10px;font-size:13px;color:var(--muted)">类型：${esc(h.hazard_type||'-')} ｜ 位置：${esc(h.location||'-')} ｜ 上报人：#${h.reporter_id} ｜ 截止：${esc(h.due_date ? h.due_date.slice(0,10) : '-')}</span>`;
+    document.getElementById('d-desc').textContent = h.description;
+    const imgs = document.getElementById('d-imgs');
+    imgs.innerHTML = '';
+    try { JSON.parse(h.image_urls||'[]').forEach(u => imgs.innerHTML += `<img src="${u}" onclick="window.open('${u}')">`); } catch(e){}
+    const tl = document.getElementById('d-timeline'); tl.innerHTML = '';
+    (h.timeline||[]).forEach(t => {
+      tl.innerHTML += `<div class="tl-item"><div class="tl-action">${esc(t.action)}</div>${t.note?`<div class="tl-note">${esc(t.note)}</div>`:''}<div class="tl-time">${esc((t.created_at||'').slice(0,16))} · 操作人 #${t.operator_id||'-'}</div></div>`;
+    });
+    if (!(h.timeline||[]).length) tl.innerHTML = '<div class="empty-tip">暂无时间线</div>';
+    renderActions(h);
+  } catch(e){ alert('加载失败：' + e.message); }
+}
+function renderActions(h) {
+  const box = document.getElementById('d-actions'); box.innerHTML = '';
+  const role = me.role;
+  // 权限矩阵（与后端 require_roles/service 一致）：
+  //   admin: 上报/派单/整改/验收；safety_officer: 上报/整改(仅被派单)；employee: 上报
+  const canAssign = role === 'admin' && (h.status === '待处理' || h.status === '已驳回');
+  const canRectify = (h.status === '处理中') && (role === 'admin' || h.assignee_id === me.id);
+  const canAccept = role === 'admin' && h.status === '待验收';
+  if (canAssign) box.innerHTML += `<button class="btn btn-primary" onclick="openModal('modal-assign')">派单</button>`;
+  if (canRectify) box.innerHTML += `<button class="btn btn-gold" onclick="openModal('modal-rectify')">整改反馈</button>`;
+  if (canAccept) box.innerHTML += `<button class="btn btn-outline" onclick="openModal('modal-accept')">验收</button>`;
+}
+/* 弹窗 */
+function openModal(id){ document.getElementById(id).classList.remove('hidden'); if (id === 'modal-assign') { const s = document.getElementById('a-search'); if (s) s.value = ''; loadAssignees(); } }
+function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
+// 派单责任人下拉：只显示可整改角色（安全员），排除自己
+// 搜索框支持按 ID/姓名精确查找（解决 limit 截断后 50+ 用户不可选）
+async function loadAssignees(q) {
+  const sel = document.getElementById('a-assignee');
+  sel.innerHTML = '<option value="">— 加载中… —</option>';
+  try {
+    // 只取安全员；有搜索词时按 q 过滤（ID 精确 / 姓名模糊）
+    const url = q ? `/api/users?role=safety_officer&q=${encodeURIComponent(q)}&limit=50`
+                  : '/api/users?role=safety_officer&limit=50';
+    const r = await api(url);
+    const users = await r.json();
+    if (!users.length) { sel.innerHTML = '<option value="">— 未找到匹配用户 —</option>'; return; }
+    sel.innerHTML = users.map(u => {
+      const roleName = {admin:'管理员', safety_officer:'安全员', employee:'普通员工'}[u.role] || u.role;
+      const name = u.real_name ? `${u.real_name}（${u.username}）` : u.username;
+      return `<option value="${u.id}">#${u.id} ${name} · ${roleName}</option>`;
+    }).join('');
+  } catch(e) { sel.innerHTML = '<option value="">加载失败：' + esc(e.message) + '</option>'; }
+}
+// 搜索框：防抖 300ms 实时搜索
+let assignSearchTimer = null;
+document.getElementById('a-search').addEventListener('input', (e) => {
+  clearTimeout(assignSearchTimer);
+  assignSearchTimer = setTimeout(() => {
+    const kw = e.target.value.trim();
+    document.getElementById('a-search-hint').textContent = kw
+      ? `搜索「${kw}」结果（按 ID 或姓名匹配）`
+      : '显示安全员列表；搜索框支持按 ID 或姓名精确查找（含 50 名以外的用户）';
+    loadAssignees(kw);
+  }, 300);
+});
+document.getElementById('a-submit').onclick = async () => {
+  const assignee_id = parseInt(document.getElementById('a-assignee').value, 10);
+  if (!assignee_id) return alert('请选择责任人');
+  const due = document.getElementById('a-due').value;
+  try {
+    await api('/api/hazards/' + curHazardId + '/assign', { method:'POST', body: JSON.stringify({ assignee_id, due_date: due ? new Date(due).toISOString() : null }) });
+    alert('派单成功'); closeModal('modal-assign'); loadDetail();
+  } catch(e){ alert('派单失败：' + e.message); }
+};
+document.getElementById('r-file').onchange = async (e) => {
+  const files = [...e.target.files];
+  for (const f of files) {
+    const fd = new FormData(); fd.append('file', f);
+    try { const r = await api('/api/uploads/image', { method:'POST', body: fd }); const d = await r.json();
+      rectifyUrls.push(d.url); document.getElementById('r-imgs').innerHTML += `<img src="${d.url}">`; } catch(err){ alert(err.message); }
+  }
+  e.target.value='';
+};
+document.getElementById('r-submit').onclick = async () => {
+  const measures = document.getElementById('r-measures').value.trim();
+  if (!measures) return alert('请填写整改措施');
+  try {
+    await api('/api/hazards/' + curHazardId + '/rectify', { method:'POST', body: JSON.stringify({ rectify_measures: measures, rectify_images: rectifyUrls.length?rectifyUrls:null }) });
+    alert('整改反馈已提交'); closeModal('modal-rectify'); loadDetail();
+  } catch(e){ alert('提交失败：' + e.message); }
+};
+document.getElementById('ac-pass').onclick = () => doAccept(true);
+document.getElementById('ac-reject').onclick = () => doAccept(false);
+async function doAccept(approved) {
+  try {
+    await api('/api/hazards/' + curHazardId + '/accept', { method:'POST', body: JSON.stringify({ approved, note: document.getElementById('ac-note').value.trim() || null }) });
+    alert(approved ? '验收通过，隐患已闭环' : '已驳回，等待重新处理'); closeModal('modal-accept'); loadDetail();
+  } catch(e){ alert('操作失败：' + e.message); }
+}
+
+/* ============ AI 问答 ============ */
+async function loadConvs() {
+  try {
+    const r = await api('/api/conversations'); const list = await r.json();
+    const el = document.getElementById('conv-list'); el.innerHTML = '';
+    list.forEach(c => {
+      const d = document.createElement('div');
+      d.className = 'conv-item' + (c.id === curConvId ? ' active' : '');
+      d.dataset.id = c.id;
+      const t = document.createElement('span');
+      t.className = 'conv-title';
+      t.textContent = c.title || '新会话';
+      d.appendChild(t);
+      const del = document.createElement('button');
+      del.className = 'conv-del';
+      del.textContent = '✕';
+      del.title = '删除会话';
+      del.onclick = (e) => { e.stopPropagation(); deleteConv(c.id); };
+      d.appendChild(del);
+      d.onclick = () => openConv(c.id);
+      el.appendChild(d);
+    });
+  } catch(e){}
+}
+async function deleteConv(id) {
+  if (!confirm('确定删除该会话及其全部消息？')) return;
+  try {
+    await api('/api/conversations/' + id, { method: 'DELETE' });
+    if (curConvId === id) {
+      curConvId = null;
+      document.getElementById('chat-area').innerHTML = '<div class="empty-tip">👋 会话已删除，开始新提问吧～</div>';
+    }
+    loadConvs();
+  } catch(e){ alert('删除失败：' + e.message); }
+}
+async function openConv(id) {
+  curConvId = id;
+  document.querySelectorAll('.conv-item').forEach(n=>n.classList.remove('active'));
+  const area = document.getElementById('chat-area'); area.innerHTML = '';
+  try {
+    const r = await api(`/api/conversations/${id}/messages`); const msgs = await r.json();
+    msgs.forEach(m => renderMsg(m));
+    if (!msgs.length) area.innerHTML = '<div class="empty-tip">该会话暂无消息</div>';
+    loadConvs();
+  } catch(e){}
+}
+async function loadChips() {
+  try {
+    const r = await api('/api/chat/quick-questions'); const qs = await r.json();
+    const el = document.getElementById('chips'); el.innerHTML = '';
+    qs.forEach(q => { const b = document.createElement('button'); b.className='chip'; b.textContent=q.label;
+      b.onclick = () => { document.getElementById('question-input').value = q.question; send(); }; el.appendChild(b); });
+  } catch(e){}
+}
+function renderMsg(m, streamingEl) {
+  const area = document.getElementById('chat-area');
+  const empty = area.querySelector('.empty-tip'); if (empty) empty.remove();
+  const row = document.createElement('div');
+  row.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
+  const av = document.createElement('div'); av.className='avatar'; av.textContent = m.role==='user' ? '我' : 'AI';
+  const bubble = document.createElement('div'); bubble.className='bubble'; bubble.textContent = m.content || '';
+  row.appendChild(av); row.appendChild(bubble);
+  if (m.role === 'assistant') {
+    if (m.refs) {
+      try {
+        const refs = JSON.parse(m.refs);
+        if (Array.isArray(refs) && refs.length) {
+          const box = document.createElement('div'); box.className='refs';
+          // 领导优化：引用按 doc_type 四类分颜色（法规蓝/规程紫/预案橙/案例绿）
+          const TYPE_META = {
+            '法规/制度': { color:'#2563eb', label:'法规' },
+            '操作规程': { color:'#7c3aed', label:'规程' },
+            '应急预案': { color:'#d97706', label:'预案' },
+            '事故案例': { color:'#16a34a', label:'案例' },
+          };
+          refs.forEach(s => {
+            const meta = TYPE_META[s.doc_type] || { color:'#6b7280', label:'其他' };
+            const t = document.createElement('span'); t.className='tag tag-link';
+            t.textContent = `【${meta.label}】${s.doc||''}${s.chapter?'·'+s.chapter:''}`.slice(0,36);
+            t.style.cursor='pointer'; t.title='查看原件';
+            t.style.background = meta.color + '18';
+            t.style.color = meta.color;
+            t.style.border = '1px solid ' + meta.color + '40';
+            t.onclick = () => openKbDoc(s.source, s.doc_type);
+            box.appendChild(t);
+          });
+          bubble.appendChild(box);
+        }
+      } catch(e){}
+    }
+    const rate = document.createElement('div'); rate.className='rate-row';
+    // uiverse 002 双层 SVG 结构：outline 常驻 / filled 选中弹出 / spark 火花扩散
+    const rateIco = () => `<span class="rate-ico">`
+      + `<svg class="ico-outline" viewBox="0 0 24 24"><path d="M7 22V10l5-8 1.2.7a2 2 0 0 1 .9 2.2L13 10h5.3a2 2 0 0 1 2 2.5l-1.7 7A2.5 2.5 0 0 1 16.1 22H7Zm0 0H4a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1h3"/></svg>`
+      + `<svg class="ico-filled" viewBox="0 0 24 24"><path d="M7 22V10l5-8 1.2.7a2 2 0 0 1 .9 2.2L13 10h5.3a2 2 0 0 1 2 2.5l-1.7 7A2.5 2.5 0 0 1 16.1 22H7Zm-3 0h3V10H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1Z"/></svg>`
+      + `<svg class="ico-spark" viewBox="0 0 24 24" fill="none"><path d="M4 3 L6 6 M20 3 L18 6 M12 1 L12 4"/></svg>`
+      + `</span>`;
+    rate.innerHTML =
+      `<button class="rate-btn rate-up${m.rating===1?' on':''}" onclick="rateMsg(${m.id},1)">${rateIco()}有用</button>`
+      + `<button class="rate-btn rate-down${m.rating===-1?' on':''}" onclick="rateMsg(${m.id},-1)">${rateIco()}没用</button>`;
+    bubble.appendChild(rate);
+  }
+  area.appendChild(row); area.scrollTop = area.scrollHeight;
+  return bubble;
+}
+async function rateMsg(id, v) {
+  try { await api('/api/messages/' + id + '/rating', { method:'POST', body: JSON.stringify({ rating: v }) }); openConv(curConvId); } catch(e){ alert(e.message); }
+}
+async function send() {
+  const input = document.getElementById('question-input');
+  const question = input.value.trim();
+  if (!question || streaming) return;
+  input.value=''; streaming = true; document.getElementById('send-btn').disabled = true;
+  renderMsg({ role:'user', content: question });
+  const bubble = renderMsg({ role:'assistant', content:'' });
+  const cur = document.createElement('span'); cur.className='cursor'; bubble.appendChild(cur);
+  try {
+    const resp = await api('/api/chat', { method:'POST', body: JSON.stringify({ question, conversation_id: curConvId || null }) });
+    const reader = resp.body.getReader(); const decoder = new TextDecoder();
+    let buffer='', answer='', first=true;
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, {stream:true});
+      let i;
+      while ((i = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0,i); buffer = buffer.slice(i+2);
+        const dl = frame.split('\n').find(l=>l.startsWith('data:'));
+        if (!dl) continue;
+        const payload = dl.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const obj = JSON.parse(payload);
+          if (obj.delta) { if (first){ bubble.querySelector('.cursor')?.remove(); first=false; } answer += obj.delta; bubble.textContent = answer;
+            document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight; }
+          if (obj.error) { bubble.querySelector('.cursor')?.remove(); bubble.textContent = '❌ ' + obj.error; }
+        } catch(e){}
+      }
+    }
+  } catch(e){ bubble.querySelector('.cursor')?.remove(); bubble.textContent = '❌ ' + e.message; }
+  finally {
+    streaming = false; document.getElementById('send-btn').disabled = false;
+    await loadConvs();
+    if (!curConvId) { const first = document.querySelector('.conv-item'); if (first && first.dataset.id) openConv(parseInt(first.dataset.id,10)); }
+  }
+}
+
+/* ============ 通知 ============ */
+// 消息类型 → 展示配置（图标/颜色/标签）
+const NOTIFY_TYPES = {
+  report:   { icon: '📥', label: '接收上报',   color: '#dc2626' },
+  assign:   { icon: '📋', label: '整改任务',   color: '#2563eb' },
+  rectify:  { icon: '✍️', label: '整改反馈',   color: '#d97706' },
+  accept:   { icon: '✅', label: '验收结果',   color: '#16a34a' },
+  final:    { icon: '🏁', label: '最终处理',   color: '#7c3aed' },
+  kb_contrib: { icon: '📚', label: '知识贡献', color: '#A93226' },
+  general:  { icon: '📢', label: '通知',       color: '#6b7280' },
+};
+async function loadNotifies() {
+  try {
+    const r = await api('/api/notifications'); const d = await r.json();
+    const el = document.getElementById('notify-list');
+    el.innerHTML = '<h3 style="border-left:3px solid var(--primary);padding-left:10px;margin-bottom:8px">我的消息' + (d.unread?`（${d.unread} 未读）`:'') + '</h3>';
+    const items = d.items||[];
+    if (!items.length) { el.innerHTML += '<div class="empty-tip">暂无消息</div>'; return; }
+    // 按 type 分组（保持时间序）
+    const groups = {};
+    items.forEach(m => {
+      const msg = typeof m === 'string' ? { message: m, hazard_id: null, type: 'general' } : m;
+      const t = NOTIFY_TYPES[msg.type] || NOTIFY_TYPES.general;
+      (groups[msg.type || 'general'] = groups[msg.type || 'general'] || []).push({ msg, t });
+    });
+    let html = '';
+    for (const [gtype, list] of Object.entries(groups)) {
+      const t = NOTIFY_TYPES[gtype] || NOTIFY_TYPES.general;
+      html += `<div class="notify-group" style="margin-top:12px"><span class="notify-group-label" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:${t.color}">${t.icon} ${t.label}<span style="background:${t.color}22;color:${t.color};border-radius:8px;padding:0 8px;font-size:12px">${list.length}</span></span>`;
+      list.forEach(({ msg, t: tt }) => {
+        const hid = msg.hazard_id;
+        // 知识贡献消息：文本内嵌「贡献 #id」，解析为跳转链接（贡献详情页）
+        let body;
+        if (msg.type === 'kb_contrib') {
+          const m = (msg.message || '').match(/贡献 #(\d+)/);
+          body = m ? `<a href="#/kb-contrib/${m[1]}" style="color:var(--primary);text-decoration:none;font-weight:600">${esc(msg.message)} → 查看贡献</a>` : esc(msg.message);
+        } else {
+          body = hid ? `<a href="#/hazard/${hid}" style="color:var(--primary);text-decoration:none;font-weight:600">${esc(msg.message)} → 查看隐患</a>` : esc(msg.message);
+        }
+        html += `<div class="notify-item" style="border-left:3px solid ${tt.color};padding-left:12px"><span>${body}</span></div>`;
+      });
+      html += '</div>';
+    }
+    el.innerHTML += html;
+  } catch(e){}
+}
+async function loadNotifyCount() {
+  try { const r = await api('/api/notifications'); const d = await r.json();
+    const b = document.getElementById('notify-badge');
+    b.textContent = d.unread ? `（${d.unread}）` : ''; } catch(e){}
+}
+document.getElementById('notify-clear').onclick = async () => {
+  try { await api('/api/notifications', { method:'DELETE' }); loadNotifies(); loadNotifyCount(); } catch(e){ alert(e.message); }
+};
+
+/* ============ PPT 工坊（P01-P07，D4） ============ */
+let curPptId = null, curPptOutline = null;
+async function loadPptTasks() {
+  try {
+    const r = await api('/api/ppt?page=1&page_size=20'); const d = await r.json();
+    const tbody = document.getElementById('ppt-tbody'); tbody.innerHTML = '';
+    document.getElementById('ppt-empty').style.display = (d.items||[]).length ? 'none' : 'block';
+    (d.items||[]).forEach(t => {
+      const fileOk = t.status === '已完成' && t.file_path;
+      // file_path 为 Windows 相对路径（ppt_files\xxx.pptx），需兼容 \ 与 / 两种分隔符取文件名
+      const fname = (t.file_path || '').replace(/\\/g, '/').split('/').pop();
+      const dl = fileOk ? `<a class="btn btn-outline btn-sm" href="/ppt-files/${encodeURIComponent(fname)}" download>下载</a>` : '';
+      tbody.innerHTML += `<tr>
+        <td style="font-weight:600">${esc(t.topic)}</td>
+        <td>${esc({business:'商务',simple:'简约',tech:'科技'}[t.template] || t.template)}</td>
+        <td><span class="badge ${t.status === '已完成' ? '已闭环' : t.status === '失败' ? '已驳回' : '处理中'}">${t.status}</span></td>
+        <td style="font-size:12px;color:var(--muted)">${(t.created_at||'').slice(0,16)}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="openPptOutline(${t.id})">${t.outline ? '编辑大纲' : '生成大纲'}</button>
+            ${t.status === '草稿' || t.status === '失败' ? `<button class="btn btn-primary btn-sm" onclick="genPpt(${t.id})">🚀 生成</button>` : ''}
+            ${dl}
+            <button class="btn btn-outline btn-sm" onclick="delPpt(${t.id})" style="color:var(--st-pending)">删除</button></td>
+      </tr>`;
+    });
+  } catch(e){ alert('PPT 任务加载失败：' + e.message); }
+}
+let pptMdFile = null;  // 用户选择的 .md 文件（领导优化：按文档生成大纲）
+
+// ---- 模板列表加载 + 自定义模板上传（领导优化） ----
+async function loadPptTemplates() {
+  const sel = document.getElementById('ppt-template');
+  const cur = sel.value;
+  try {
+    const r = await api('/api/ppt/templates');
+    const d = await r.json();
+    const items = d.items || [];
+    sel.innerHTML = items.map(t =>
+      `<option value="${esc(t.id)}">${esc(t.builtin ? t.name : '📁 ' + t.name)}</option>`
+    ).join('');
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  } catch (e) { /* 模板列表加载失败不阻塞（保底内置 3 套由 HTML 静态写入） */ }
+}
+
+document.getElementById('ppt-tpl-pick').onclick = () => document.getElementById('ppt-tpl-file').click();
+document.getElementById('ppt-tpl-file').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (f.size > 20 * 1024 * 1024) return alert('模板文件超过 20MB 上限');
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const r = await api('/api/ppt/templates', { method:'POST', body: fd });
+    const d = await r.json();
+    alert('模板上传成功：' + (d.template?.name || ''));
+    await loadPptTemplates();
+    document.getElementById('ppt-template').value = d.template?.id || '';
+  } catch (err) { alert('上传失败：' + err.message); }
+  e.target.value = '';
+});
+
+document.getElementById('ppt-md-pick').onclick = () => document.getElementById('ppt-md-file').click();
+document.getElementById('ppt-md-file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (!f.name.toLowerCase().endsWith('.md')) return alert('仅支持 .md 文件');
+  pptMdFile = f;
+  document.getElementById('ppt-md-name').textContent = '已选择：' + f.name;
+});
+
+document.getElementById('ppt-create').onclick = async () => {
+  const topic = document.getElementById('ppt-topic').value.trim();
+  const template = document.getElementById('ppt-template').value;
+  if (!topic && !pptMdFile) return alert('请输入讲座主题，或上传 .md 文档');
+  const btn = document.getElementById('ppt-create'); btn.disabled = true; btn.textContent = '🤖 AI 生成大纲中…';
+  try {
+    let body = { topic: topic || pptMdFile.name.replace(/\.md$/i, ''), template };
+    if (pptMdFile) {
+      body.md_content = await pptMdFile.text();   // FileReader → 文本
+      if (body.md_content.trim().length < 10) throw new Error('文档内容过短（至少 10 字）');
+    }
+    const r = await api('/api/ppt', { method:'POST', body: JSON.stringify(body) });
+    const d = await r.json();
+    alert('大纲已生成！可点击「编辑大纲」查看/修改后生成 PPT');
+    document.getElementById('ppt-topic').value = '';
+    pptMdFile = null;
+    document.getElementById('ppt-md-file').value = '';
+    document.getElementById('ppt-md-name').textContent = '';
+    loadPptTasks();
+  } catch(e){ alert('创建失败：' + e.message); }
+  btn.disabled = false; btn.textContent = '🤖 生成大纲';
+};
+function openPptOutline(id) {
+  curPptId = id;
+  // 从列表拿大纲（列表接口返回 outline）
+  const row = [...document.querySelectorAll('#ppt-tbody tr')].find(tr => tr.textContent.includes('编辑大纲') || true);
+  // 直接调详情接口拿大纲
+  api('/api/ppt/' + id).then(r => r.json()).then(t => {
+    try { curPptOutline = JSON.parse(t.outline || '{}'); document.getElementById('ppt-outline-json').value = JSON.stringify(curPptOutline, null, 2); }
+    catch(e){ document.getElementById('ppt-outline-json').value = t.outline || '{}'; }
+    openModal('modal-ppt-outline');
+  }).catch(e => alert('加载大纲失败：' + e.message));
+}
+document.getElementById('ppt-outline-save').onclick = async () => {
+  let outline;
+  try { outline = JSON.parse(document.getElementById('ppt-outline-json').value); }
+  catch(e){ return alert('大纲 JSON 格式错误：' + e.message); }
+  try {
+    const r = await api('/api/ppt/' + curPptId + '/outline', { method:'PUT', body: JSON.stringify({ outline }) });
+    curPptOutline = outline;
+    alert('大纲已保存');
+    closeModal('modal-ppt-outline'); loadPptTasks();
+  } catch(e){ alert('保存失败：' + e.message); }
+};
+document.getElementById('ppt-generate').onclick = () => genPpt(curPptId, true);
+async function genPpt(id, fromOutline) {
+  if (fromOutline) {
+    let outline;
+    try { outline = JSON.parse(document.getElementById('ppt-outline-json').value); }
+    catch(e){ return alert('大纲 JSON 格式错误：' + e.message); }
+    try { await api('/api/ppt/' + id + '/outline', { method:'PUT', body: JSON.stringify({ outline }) }); } catch(e){}
+  }
+  if (!confirm('开始生成 PPT？（百度 API 约 20-60s，免费额度每日 10 次）')) return;
+  try {
+    const r = await api('/api/ppt/' + id + '/generate', { method:'POST', body: JSON.stringify({}) });
+    const d = await r.json();
+    if (d.status === '已完成') { alert('✅ PPT 生成完成！点击「下载」导出 .pptx'); closeModal('modal-ppt-outline'); }
+    else alert('生成结果：' + d.status);
+    loadPptTasks();
+  } catch(e){ alert('生成失败：' + e.message); loadPptTasks(); }
+}
+async function delPpt(id) {
+  if (!confirm('确定删除该 PPT 任务？')) return;
+  try { await api('/api/ppt/' + id, { method:'DELETE' }); loadPptTasks(); } catch(e){ alert(e.message); }
+}
+
+/* ============ 考试工坊（优化丰富期） ============ */
+let curExamId = null;
+const examTplNames = { general:'通用安全知识', law:'法规条文', case:'事故案例分析' };
+const examTypeNames = { single_choice:'单选题', multi_choice:'多选题', true_false:'判断题', essay:'简答题' };
+
+async function loadExamTemplates() {
+  const grid = document.getElementById('exam-tpl-grid');
+  try {
+    const r = await api('/api/exam/templates');
+    const items = await r.json();
+    grid.innerHTML = items.map((t, i) => `
+      <div class="exam-tpl-card ${i === 0 ? 'selected' : ''}" data-key="${esc(t.key)}" onclick="selectExamTpl(this)">
+        <div class="exam-tpl-name">${esc(t.name)}</div>
+        <div class="exam-tpl-desc">${esc(t.description || '')}</div>
+        <div class="exam-tpl-meta">${esc(t.distribution || '')} · 总分 ${t.total_score}</div>
+      </div>`).join('');
+    if (items.length) selectExamTpl(grid.querySelector('.exam-tpl-card'));
+  } catch(e) { grid.innerHTML = `<div class="hint">模板加载失败：${esc(e.message)}</div>`; }
+}
+function selectExamTpl(card) {
+  document.querySelectorAll('.exam-tpl-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+}
+async function loadExamHistory() {
+  try {
+    const r = await api('/api/exam/papers?page=1&page_size=20');
+    const d = await r.json();
+    const tbody = document.getElementById('exam-tbody'); tbody.innerHTML = '';
+    document.getElementById('exam-empty').style.display = (d.items || []).length ? 'none' : 'block';
+    (d.items || []).forEach(p => {
+      const ok = p.status === '已完成';
+      tbody.innerHTML += `<tr>
+        <td style="font-weight:600">${esc(p.title)}</td>
+        <td>${esc(examTplNames[p.template] || p.template)}</td>
+        <td><span class="badge ${p.status === '已完成' ? '已闭环' : p.status === '失败' ? '已驳回' : '处理中'}">${p.status}</span></td>
+        <td style="font-size:12px;color:var(--muted)">${(p.created_at || '').slice(0, 16)}</td>
+        <td style="white-space:nowrap">
+          ${ok ? `<button class="btn btn-outline btn-sm" onclick="viewExam('${p.paper_id}')">查看</button>
+                 <a class="btn btn-outline btn-sm" href="#" onclick="return exportExam('${p.paper_id}')">导出</a>`
+              : `<span class="hint">${esc(p.error || '生成中…')}</span>`}
+        </td>
+      </tr>`;
+    });
+  } catch(e) { /* 列表加载失败静默 */ }
+}
+document.getElementById('exam-file-pick').onclick = () => document.getElementById('exam-file').click();
+document.getElementById('exam-file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (!/\.(md|txt)$/i.test(f.name)) return alert('仅支持 .md / .txt 文件');
+  const rd = new FileReader();
+  rd.onload = () => { document.getElementById('exam-input').value = String(rd.result || '').slice(0, 5000); };
+  rd.readAsText(f);
+  e.target.value = '';
+});
+document.getElementById('exam-create').onclick = async () => {
+  const title = document.getElementById('exam-title').value.trim();
+  const input = document.getElementById('exam-input').value.trim();
+  const tpl = (document.querySelector('.exam-tpl-card.selected') || {}).dataset?.key || 'general';
+  const fmt = document.getElementById('exam-format').value;
+  if (!title) return alert('请输入试卷名称');
+  if (input.length < 10) return alert('出题要求至少 10 字（可粘贴文档内容）');
+  const btn = document.getElementById('exam-create');
+  btn.disabled = true; btn.textContent = '🎓 AI 出卷中（约 30-60s）…';
+  try {
+    const r = await api('/api/exam/papers', { method:'POST', body: JSON.stringify({
+      title, template: tpl, input_type:'prompt', input_text: input.slice(0, 5000),
+      use_rag: document.getElementById('exam-rag').checked, export_format: fmt,
+    })});
+    const d = await r.json();
+    if (d.status === '已完成') {
+      renderExamPreview(d);
+      document.getElementById('exam-result-card').classList.remove('hidden');
+      document.getElementById('exam-result-card').scrollIntoView({ behavior:'smooth' });
+    } else {
+      alert('出卷失败：' + (d.error || d.status));
+    }
+    loadExamHistory();
+  } catch(e) { alert('出卷失败：' + e.message); }
+  btn.disabled = false; btn.textContent = '🎓 生成试卷';
+};
+function renderExamPreview(p) {
+  curExamId = p.paper_id;
+  let paper = {};
+  try { paper = JSON.parse(p.exam_content || '{}'); } catch(e) {}
+  const qs = paper.questions || [];
+  const groups = {};
+  qs.forEach(q => { (groups[q.type] = groups[q.type] || []).push(q); });
+  let html = `<div style="font-size:15px;font-weight:700;margin-bottom:4px">${esc(paper.title || p.title)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">总分：${paper.total_score ?? 100} 分 · 共 ${qs.length} 题</div>`;
+  let no = 0;
+  Object.keys(groups).forEach(t => {
+    html += `<div class="exam-group">${examTypeNames[t] || t}</div>`;
+    groups[t].forEach(q => {
+      no++;
+      html += `<div class="exam-q">
+        <div class="exam-q-head">${no}. ${esc(q.content || '')} <span class="exam-score">（${q.score ?? 0} 分）</span></div>`;
+      if ((q.type === 'single_choice' || q.type === 'multi_choice') && (q.options || []).length) {
+        html += '<div class="exam-opts">' + q.options.map((o, i) => `<div>${String.fromCharCode(65 + i)}. ${esc(o)}</div>`).join('') + '</div>';
+      }
+      html += `<div class="exam-ans">【答案】${esc(q.answer || '')}</div>`;
+      if (q.explanation) html += `<div class="exam-exp">【解析】${esc(q.explanation)}</div>`;
+      html += '</div>';
+    });
+  });
+  document.getElementById('exam-preview').innerHTML = html;
+}
+async function exportExam(paperId) {
+  const fmt = document.getElementById('exam-format').value;
+  try {
+    const r = await api(`/api/exam/papers/${paperId}/export`, { method:'POST', body: JSON.stringify({ format: fmt }) });
+    const d = await r.json();
+    // download 写真实文件名（带扩展名），避免浏览器按 MIME 把 md 当成 txt
+    const name = (d.file_url || '').split('/').pop() || `试卷.${fmt}`;
+    const a = document.createElement('a');
+    a.href = d.file_url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch(e) { alert('导出失败：' + e.message); }
+  return false;
+}
+async function viewExam(paperId) {
+  try {
+    const r = await api('/api/exam/papers/' + paperId);
+    const d = await r.json();
+    renderExamPreview(d);
+    document.getElementById('exam-result-card').classList.remove('hidden');
+    document.getElementById('exam-result-card').scrollIntoView({ behavior:'smooth' });
+  } catch(e) { alert(e.message); }
+}
+document.getElementById('exam-download').onclick = () => {
+  if (!curExamId) return alert('请先生成试卷');
+  exportExam(curExamId);
+};
+
+/* ============ 知识贡献（优化丰富期） ============ */
+let curKcId = null;
+const KC_DOC_TYPES = { laws:'法规/制度', procedures:'操作规程', plans:'应急预案', cases:'事故案例' };
+const KC_STATUS_BADGE = { 待审核:'处理中', 已入库:'已闭环', 已驳回:'已驳回' };
+
+async function loadKbContribs(status) {
+  try {
+    const s = status || '';
+    // 非 admin 的筛选按钮不显示（后端只返回自己的贡献）
+    document.getElementById('kc-filter').style.display = (me && me.role === 'admin') ? 'flex' : 'none';
+    const url = '/api/knowledge-contrib?page=1&page_size=20' + (s ? '&status_filter=' + encodeURIComponent(s) : '');
+    const r = await api(url); const d = await r.json();
+    const tbody = document.getElementById('kc-tbody'); tbody.innerHTML = '';
+    document.getElementById('kc-empty').style.display = (d.items || []).length ? 'none' : 'block';
+    (d.items || []).forEach(c => {
+      tbody.innerHTML += `<tr>
+        <td style="font-weight:600">${esc(c.title)}</td>
+        <td>${esc(KC_DOC_TYPES[c.doc_type] || c.doc_type)}</td>
+        <td><span class="badge ${KC_STATUS_BADGE[c.status] || '处理中'}">${c.status}</span></td>
+        <td style="font-size:12px;color:var(--muted)">#${c.contributor_id}</td>
+        <td style="font-size:12px;color:var(--muted)">${(c.created_at || '').slice(0, 16)}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="openKbContribDetail(${c.id})">详情</button></td>
+      </tr>`;
+    });
+  } catch(e) { /* 列表加载失败静默 */ }
+}
+document.querySelectorAll('.kc-filter-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.kc-filter-btn').forEach(b => { b.style.border = '1px solid var(--line)'; b.style.color = 'var(--ink)'; b.style.background = '#fff'; });
+    btn.style.border = '1px solid var(--primary)'; btn.style.color = 'var(--primary)';
+    loadKbContribs(btn.dataset.s);
+  };
+});
+let kcFile = null;
+document.getElementById('kc-file-pick').onclick = () => document.getElementById('kc-file').click();
+document.getElementById('kc-file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (!/\.(md|markdown|txt|docx|pdf)$/i.test(f.name)) return alert('仅支持 md/txt/docx/pdf 文件');
+  if (f.size > 10 * 1024 * 1024) return alert('文件超过 10MB 上限');
+  kcFile = f;
+  document.getElementById('kc-file-name').textContent = '已选择：' + f.name + '（' + (f.size / 1024).toFixed(0) + ' KB）';
+});
+document.getElementById('kc-submit').onclick = async () => {
+  const title = document.getElementById('kc-title').value.trim();
+  const intro = document.getElementById('kc-intro').value.trim();
+  const docType = document.getElementById('kc-doc-type').value;
+  if (title.length < 2) return alert('请输入知识标题（至少 2 字）');
+  if (!kcFile) return alert('请选择要上传的知识文件');
+  if (intro.length < 2) return alert('请填写文件简介（至少 2 字）');
+  const btn = document.getElementById('kc-submit');
+  btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', kcFile);
+    fd.append('title', title);
+    fd.append('doc_type', docType);
+    fd.append('intro', intro);
+    await api('/api/knowledge-contrib', { method:'POST', body: fd });
+    alert('✅ 已提交，等待管理员审核（结果会通过消息通知你）');
+    document.getElementById('kc-title').value = '';
+    document.getElementById('kc-intro').value = '';
+    document.getElementById('kc-file').value = '';
+    document.getElementById('kc-file-name').textContent = '未选择文件';
+    kcFile = null;
+    loadKbContribs();
+  } catch(e) { alert('提交失败：' + e.message); }
+  btn.disabled = false;
+};
+async function openKbContribDetail(id) {
+  curKcId = id;
+  try {
+    const r = await api('/api/knowledge-contrib/' + id); const c = await r.json();
+    document.getElementById('kc-detail-title').textContent = '贡献 #' + c.id + ' · ' + c.title;
+    document.getElementById('kc-detail-meta').textContent =
+      `类别：${KC_DOC_TYPES[c.doc_type] || c.doc_type} ｜ 状态：${c.status}` +
+      (c.file_intro ? ` ｜ 简介：${c.file_intro}` : '') +
+      (c.chunk_count ? ` ｜ 入库块数：${c.chunk_count}` : '') +
+      (c.review_note ? ` ｜ 审核意见：${c.review_note}` : '');
+    document.getElementById('kc-detail-content').innerHTML = mdRender(c.content);
+    document.getElementById('kc-preview-box').innerHTML = '';
+    document.getElementById('kc-review-note').value = '';
+    // 管理员 + 待审核 才显示审核区
+    const isAdmin = me && me.role === 'admin';
+    document.getElementById('kc-review-area').classList.toggle('hidden', !(isAdmin && c.status === '待审核'));
+    // 进度时间线
+    const tr = await api('/api/knowledge-contrib/' + id + '/timeline'); const tl = await tr.json();
+    document.getElementById('kc-detail-tl').innerHTML = (tl || []).map(t =>
+      `<div>${esc(t.action)} — ${(t.created_at || '').slice(0, 16)}${t.note ? '（' + esc(t.note) + '）' : ''}</div>`
+    ).join('') || '<div>暂无记录</div>';
+    openModal('modal-kc-detail');
+  } catch(e) { alert('加载失败：' + e.message); }
+}
+document.getElementById('kc-ai-preview').onclick = async () => {
+  if (!curKcId) return;
+  const btn = document.getElementById('kc-ai-preview');
+  btn.disabled = true;
+  document.getElementById('kc-preview-box').innerHTML = '<div class="hint">🤖 AI 预筛中（约 10-30s）…</div>';
+  try {
+    const r = await api(`/api/knowledge-contrib/${curKcId}/review-preview`, { method:'POST', body: '{}' });
+    const d = await r.json();
+    const cls = d.suggestion === '通过' ? 'pass' : d.suggestion === '驳回' ? 'reject' : 'review';
+    const tagTxt = d.suggestion === '通过' ? '✅ 建议通过' : d.suggestion === '驳回' ? '❌ 建议驳回' : '⚠️ 建议复核';
+    document.getElementById('kc-preview-box').innerHTML = `
+      <div class="kc-preview ${cls}">
+        <span class="tag">${tagTxt}</span>
+        <div style="margin-top:6px">${esc(d.reason || '')}</div>
+        ${(d.matched || []).length ? `<div style="margin-top:4px;color:var(--muted)">命中关键词：${esc(d.matched.join('、'))}</div>` : ''}
+        <div class="hint" style="margin-top:4px">AI 辅助仅供参考，最终判定请结合「判定标准」文档</div>
+      </div>`;
+  } catch(e) { document.getElementById('kc-preview-box').innerHTML = '<div class="hint" style="color:var(--st-pending)">预筛失败：' + esc(e.message) + '</div>'; }
+  btn.disabled = false;
+};
+document.getElementById('kc-std-open').onclick = async () => {
+  openModal('modal-kc-standard');
+  document.getElementById('kc-standard-body').innerHTML = '<div class="empty-tip">加载中…</div>';
+  try {
+    const r = await api('/api/knowledge-contrib/review-standard'); const d = await r.json();
+    document.getElementById('kc-standard-body').innerHTML = mdRender(d.content || '');
+  } catch(e) { document.getElementById('kc-standard-body').innerHTML = '<div class="hint" style="color:var(--st-pending)">加载失败：' + esc(e.message) + '</div>'; }
+};
+async function doKcReview(approved) {
+  if (!curKcId) return;
+  const note = document.getElementById('kc-review-note').value.trim();
+  if (!approved && !note) return alert('驳回时必须填写原因（会通知上传者）');
+  if (!confirm(approved ? '确认审核通过并写入向量知识库？（增量写入，不重建）' : '确认驳回该贡献？')) return;
+  try {
+    await api(`/api/knowledge-contrib/${curKcId}/review`, { method:'POST', body: JSON.stringify({ approved, note: note || null }) });
+    alert(approved ? '✅ 已通过并入库' : '已驳回');
+    closeModal('modal-kc-detail');
+    loadKbContribs();
+  } catch(e) { alert('审核失败：' + e.message); }
+}
+document.getElementById('kc-approve').onclick = () => doKcReview(true);
+document.getElementById('kc-reject').onclick = () => doKcReview(false);
+
+/* ============ 个人主页（优化丰富期） ============ */
+let curHzTab = 'mine';
+
+function profileRenderKc(items) {
+  const box = document.getElementById('profile-kc-list');
+  const empty = document.getElementById('profile-kc-empty');
+  if (!items.length) { box.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  const DT = {laws:'法规/制度', procedures:'操作规程', plans:'应急预案', cases:'事故案例'};
+  box.innerHTML = items.map(c => `
+    <div class="kc-card" onclick="openKbContribDetail(${c.id})">
+      <div class="kc-title">${esc(c.title)}</div>
+      <div class="kc-meta"><span>${DT[c.doc_type]||c.doc_type}</span><span class="badge st-${c.status}">${c.status}</span><span>${(c.created_at||'').slice(0,10)}</span></div>
+    </div>`).join('');
+}
+
+function profileRenderHz(items) {
+  const box = document.getElementById('profile-hz-list');
+  const empty = document.getElementById('profile-hz-empty');
+  if (!items.length) { box.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  box.innerHTML = items.map(h => `
+    <div class="kc-card" onclick="openHazardDetail(${h.id})">
+      <div class="kc-title">${esc(h.title)}</div>
+      <div class="kc-meta"><span class="badge lv-${h.level}">${h.level}</span><span class="badge st-${h.status}">${h.status}</span><span>${(h.created_at||'').slice(0,10)}</span></div>
+    </div>`).join('');
+}
+
+async function loadProfileHz() {
+  if (!me) return;
+  let url = '/api/hazards?page=1&page_size=50';
+  if (curHzTab === 'mine') url += '&mine=true';
+  else if (curHzTab === 'rectified') url += `&rectified_by=${me.id}`;
+  else if (curHzTab === 'reviewed') url += `&reviewed_by=${me.id}`;
+  try {
+    const r = await api(url); const d = await r.json();
+    profileRenderHz(d.items || []);
+  } catch(e) { /* 静默 */ }
+}
+
+function renderHzTabs() {
+  const tabs = [{k:'mine', t:'我上报的'}];
+  if (me && (me.role === 'safety_officer' || me.role === 'admin')) tabs.push({k:'rectified', t:'我整改的'});
+  if (me && me.role === 'admin') tabs.push({k:'reviewed', t:'我审批的'});
+  document.getElementById('profile-hz-tabs').innerHTML = tabs.map(t =>
+    `<span class="kc-tag ${t.k===curHzTab?'active':''}" data-k="${t.k}">${t.t}</span>`).join('');
+  document.querySelectorAll('#profile-hz-tabs .kc-tag').forEach(el => {
+    el.onclick = () => { curHzTab = el.dataset.k; renderHzTabs(); loadProfileHz(); };
+  });
+}
+
+async function loadProfile() {
+  try {
+    const r = await api('/api/me/profile'); const p = await r.json();
+    document.getElementById('profile-username').textContent = p.username;
+    document.getElementById('profile-role').textContent = {admin:'管理员',safety_officer:'安全员',employee:'普通员工'}[p.role] || p.role;
+    document.getElementById('profile-realname').textContent = p.real_name || '—';
+    document.getElementById('profile-avatar').src = p.avatar || '';
+    document.getElementById('profile-username-input').value = p.username;
+    document.getElementById('profile-email-input').value = p.email || '';
+  } catch(e) { alert('加载资料失败：' + e.message); }
+  // 知识贡献（只通过的）
+  try {
+    const r = await api('/api/knowledge-contrib?page=1&page_size=50&status_filter=已入库&mine=true');
+    const d = await r.json();
+    profileRenderKc(d.items || []);
+  } catch(e) { /* 静默 */ }
+  // 隐患贡献（tab，按角色）
+  renderHzTabs();
+  loadProfileHz();
+}
+
+// 头像上传
+document.getElementById('profile-upload-avatar').onclick = () => document.getElementById('profile-avatar-file').click();
+document.getElementById('profile-avatar-file').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (!/^image\//.test(f.type)) return alert('请选择图片文件');
+  try {
+    const fd = new FormData(); fd.append('file', f);
+    const r = await api('/api/uploads/avatar', { method:'POST', body: fd });
+    const d = await r.json();
+    await api('/api/me/avatar', { method:'PATCH', body: JSON.stringify({ avatar: d.url }) });
+    document.getElementById('profile-avatar').src = d.url;
+    alert('✅ 头像已更新');
+    if (me) { me.avatar = d.url; }
+  } catch(err) { alert('头像上传失败：' + err.message); }
+});
+// 用户名
+document.getElementById('profile-save-username').onclick = async () => {
+  const v = document.getElementById('profile-username-input').value.trim();
+  if (v.length < 2) return alert('用户名至少 2 字');
+  try { await api('/api/me/username', { method:'PATCH', body: JSON.stringify({ username: v }) }); alert('✅ 用户名已更新'); if (me) me.username = v; document.getElementById('profile-username').textContent = v; }
+  catch(err) { alert('失败：' + err.message); }
+};
+// 邮箱
+document.getElementById('profile-save-email').onclick = async () => {
+  const v = document.getElementById('profile-email-input').value.trim();
+  try { await api('/api/me/email', { method:'PATCH', body: JSON.stringify({ email: v || null }) }); alert('✅ 邮箱已保存'); }
+  catch(err) { alert('失败：' + err.message); }
+};
+// 密码
+document.getElementById('profile-save-pwd').onclick = async () => {
+  const oldP = document.getElementById('profile-old-pwd').value;
+  const newP = document.getElementById('profile-new-pwd').value;
+  if (!oldP || !newP) return alert('请填写原密码和新密码');
+  if (newP.length < 6) return alert('新密码至少 6 位');
+  try {
+    await api('/api/me/password', { method:'PATCH', body: JSON.stringify({ old_password: oldP, new_password: newP }) });
+    alert('✅ 密码已修改，请使用新密码重新登录');
+    document.getElementById('profile-old-pwd').value = '';
+    document.getElementById('profile-new-pwd').value = '';
+    logout();
+  } catch(err) { alert('失败：' + err.message); }
+};
+// 右上角入口
+document.getElementById('profile-btn').onclick = () => location.hash = '#/profile';
+
+/* ============ 工具 ============ */
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============ 首页政策文件（领导优化：知识库四类文档浏览 + 模糊搜索） ============ */
+const KB_CAT_COLORS = { laws:'#2563eb', procedures:'#7c3aed', plans:'#d97706', cases:'#16a34a' };
+let kbAllItems = [];
+
+async function loadKbList() {
+  const el = document.getElementById('kb-cats');
+  if (!el) return;
+  try {
+    const r = await api('/api/kb/list');
+    const d = await r.json();
+    kbAllItems = d.items || [];
+    renderKbList();
+  } catch (e) {
+    el.innerHTML = '<div class="empty-tip">政策文件加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+function renderKbList() {
+  const el = document.getElementById('kb-cats');
+  const q = (document.getElementById('kb-search').value || '').trim().toLowerCase();
+  const items = q ? kbAllItems.filter(it => (it.title||it.name).toLowerCase().includes(q) || (it.category_label||'').includes(q)) : kbAllItems;
+  if (!items.length) { el.innerHTML = '<div class="empty-tip">未找到匹配的政策文件</div>'; return; }
+  // 按四类分组
+  const groups = {};
+  items.forEach(it => { (groups[it.category] = groups[it.category] || []).push(it); });
+  const order = ['laws','procedures','plans','cases'];
+  let html = '';
+  order.forEach(cat => {
+    const list = groups[cat];
+    if (!list) return;
+    const label = list[0].category_label || cat;
+    const color = KB_CAT_COLORS[cat] || '#6b7280';
+    html += `<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
+      <div style="padding:8px 12px;font-size:13px;font-weight:600;background:${color}15;color:${color};border-bottom:1px solid var(--line)">${label} <span style="font-weight:400;opacity:.7">(${list.length})</span></div>
+      <div style="padding:4px 0">${list.map(it => `
+        <div onclick="openKbDoc('${it.path}')" style="padding:7px 12px;font-size:13px;cursor:pointer;border-bottom:1px dashed var(--line);color:var(--ink);display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${esc(it.title || it.name)}</span><span style="color:${color};flex-shrink:0">›</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+// 搜索框：输入防抖 250ms
+(function () {
+  const s = document.getElementById('kb-search');
+  if (!s) return;
+  s.addEventListener('input', () => { clearTimeout(window.__kbT); window.__kbT = setTimeout(renderKbList, 250); });
+})();
+
+/* ============ 知识库文档阅读器（引用来源查看原件，D5 优化） ============ */
+const DOC_TYPE_DIR = { '法规/制度':'laws', '操作规程':'procedures', '应急预案':'plans', '事故案例':'cases' };
+// 轻量 md → HTML：标题/列表/引用/代码块/加粗/段落（够用，不引外部库）
+function mdRender(md) {
+  const lines = String(md).replace(/\u000d\u000a/g, '\n').split('\n');
+  const out = []; let inCode = false, inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of lines) {
+    const l = raw.replace(/\s+$/,'');
+    if (l.startsWith('```')) { closeList(); out.push(inCode ? '</code></pre>' : '<pre><code>'); inCode = !inCode; continue; }
+    if (inCode) { out.push(esc(l)); continue; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if (h) { closeList(); const n = h[1].length; out.push(`<h${n}>${esc(h[2])}</h${n}>`); continue; }
+    if (/^[-*•]\s+/.test(l) || /^\d+[.、]\s+/.test(l)) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${esc(l.replace(/^[-*•\d.、]+\s*/,''))}</li>`); continue;
+    }
+    if (l.startsWith('> ')) { closeList(); out.push(`<blockquote style="border-left:3px solid var(--border-strong);padding-left:10px;color:var(--muted)">${esc(l.slice(2))}</blockquote>`); continue; }
+    if (!l.trim()) { closeList(); continue; }
+    closeList();
+    out.push(`<p>${esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`);
+  }
+  closeList(); if (inCode) out.push('</code></pre>');
+  return out.join('\n');
+}
+// 引用标签点击：跳转阅读器页面
+function openKbDoc(source, docType) {
+  if (!source) return alert('该引用缺少来源文件');
+  let path = source;
+  if (!path.startsWith('knowledge_src/')) {
+    const dir = DOC_TYPE_DIR[docType] || 'laws';
+    path = 'knowledge_src/' + dir + '/' + path.split(/[\\/]/).pop();
+  }
+  location.hash = '#/kb-doc?path=' + encodeURIComponent(path);
+}
+// 阅读器页面加载
+async function loadKbDoc(path) {
+  const body = document.getElementById('kb-doc-body');
+  if (!path) { body.innerHTML = '<div class="empty-tip">缺少文档路径参数</div>'; return; }
+  document.getElementById('kb-doc-title').textContent = path.split('/').pop();
+  body.innerHTML = '<div class="empty-tip">加载中…</div>';
+  try {
+    const r = await api('/api/kb/doc?path=' + encodeURIComponent(path));
+    const d = await r.json();
+    document.getElementById('kb-doc-title').textContent = '📄 ' + d.name;
+    document.getElementById('kb-doc-type').textContent = d.path.split('/')[1] || '原文';
+    body.innerHTML = mdRender(d.content);
+  } catch (e) {
+    body.innerHTML = '<div class="empty-tip" style="color:var(--st-pending)">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+/* ============ 事件 ============ */
+document.getElementById('tab-login').onclick = () => switchTab('login');
+document.getElementById('tab-register').onclick = () => switchTab('register');
+function switchTab(t) {
+  document.getElementById('tab-login').classList.toggle('active', t==='login');
+  document.getElementById('tab-register').classList.toggle('active', t==='register');
+  document.getElementById('login-fields').classList.toggle('hidden', t!=='login');
+  document.getElementById('register-fields').classList.toggle('hidden', t!=='register');
+}
+document.getElementById('login-btn').onclick = doLogin;
+document.getElementById('reg-btn').onclick = doRegister;
+document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
+document.getElementById('logout-btn').onclick = showLogin;
+document.getElementById('c-new').onclick = () => { curConvId = null;
+  document.querySelectorAll('.conv-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('chat-area').innerHTML = '<div class="empty-tip">👋 新会话，开始提问吧～</div>'; };
+document.getElementById('send-btn').onclick = send;
+document.getElementById('question-input').addEventListener('keydown', e => { if (e.key==='Enter') send(); });
+document.getElementById('f-search').onclick = () => { hazPage = 1; loadHazards(); };
+document.getElementById('f-mine').onclick = () => { hazQuery.mine = hazQuery.mine ? 0 : 1; hazPage = 1; loadHazards(); syncMineBtn(); };
+function syncMineBtn() {
+  const b = document.getElementById('f-mine');
+  if (hazQuery.mine) { b.style.background = 'var(--primary)'; b.style.color = '#fff'; b.style.borderColor = 'var(--primary)'; }
+  else { b.style.background = ''; b.style.color = ''; b.style.borderColor = ''; }
+}
+document.getElementById('haz-prev').onclick = () => { if (hazPage > 1) { hazPage--; loadHazards(); } };
+document.getElementById('haz-next').onclick = () => { hazPage++; loadHazards(); };
+window.addEventListener('hashchange', route);
+
+/* 启动 */
+if (token) {
+  (async () => { try { const r = await api('/api/auth/me'); me = await r.json();
+    document.getElementById('user-name').textContent = me.real_name || me.username;
+    document.getElementById('user-role').textContent = {admin:'管理员',safety_officer:'安全员',employee:'普通员工'}[me.role] || me.role;
+    applyUserAvatar();
+    enterApp(); } catch(e){ showLogin(); } })();
+} else showLogin();
+</script>
+</body>
+</html>

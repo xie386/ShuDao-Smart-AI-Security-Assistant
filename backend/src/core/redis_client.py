@@ -5,10 +5,14 @@
 - 服务未启动时调用会抛 ConnectionError，可用 ping_redis() 优雅探测；
 - 当前本机 6379 未启动，D2 使用前需启动 Redis（.env 的 REDIS_URL 可配）。
 - 文件命名为 redis_client.py 而非 redis.py：避免与第三方 redis 库同名冲突（直接运行时脚本目录会遮蔽库）。
-"""
+""" 
 import logging
 import sys
 from functools import lru_cache
+"""
+注释文档:
+
+"""
 from pathlib import Path
 
 # 允许直接运行（如 python src/core/redis_client.py）时找到 src 包
@@ -20,7 +24,7 @@ from src.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-@lru_cache
+@lru_cache 
 def get_redis() -> redis.Redis:
     """创建 Redis 客户端（decode_responses=True 直接拿 str，省去手动 decode）。"""
     # protocol=2：redis-py 8.x 默认 RESP3 会发 HELLO 命令，老版本 Redis(<6.0) 不支持报
@@ -37,7 +41,7 @@ def ping_redis() -> bool:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Redis 不可用: %s", exc)
         return False
-
+ 
 
 redis_client = get_redis()
 

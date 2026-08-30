@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜀道安全助手 · AI 问答 Demo</title>
+<style>
+  :root { --primary:#409EFF; --bg:#f5f7fa; --card:#fff; --border:#e4e7ed; --text:#303133; --muted:#909399; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"Microsoft YaHei",system-ui,sans-serif; background:var(--bg); color:var(--text); height:100vh; }
+  .hidden { display:none !important; }
+
+  /* 登录 */
+  #login-view { display:flex; align-items:center; justify-content:center; height:100vh; }
+  .login-card { background:var(--card); padding:36px 40px; border-radius:10px; box-shadow:0 2px 12px rgba(0,0,0,.08); width:360px; }
+  .login-card h1 { font-size:20px; margin-bottom:6px; }
+  .login-card p { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .login-card input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:6px; margin-bottom:12px; font-size:14px; outline:none; }
+  .login-card input:focus { border-color:var(--primary); }
+  .login-card .row { display:flex; gap:10px; }
+  .login-card button { flex:1; padding:10px; border:none; border-radius:6px; font-size:14px; cursor:pointer; }
+  .btn-primary { background:var(--primary); color:#fff; }
+  .btn-plain { background:#ecf5ff; color:var(--primary); }
+  .login-card .tip { margin-top:14px; font-size:12px; color:var(--muted); line-height:1.6; }
+
+  /* 主界面 */
+  #app-view { display:flex; height:100vh; }
+  #sidebar { width:260px; background:var(--card); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+  #sidebar .brand { padding:16px; font-weight:bold; font-size:15px; border-bottom:1px solid var(--border); }
+  #new-chat { margin:12px; padding:9px; background:var(--primary); color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:14px; }
+  #conv-list { flex:1; overflow-y:auto; }
+  .conv-item { padding:10px 16px; cursor:pointer; font-size:13px; color:var(--text); border-left:3px solid transparent; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px; }
+  .conv-item:hover { background:#f5f7fa; }
+  .conv-item.active { background:#ecf5ff; border-left-color:var(--primary); color:var(--primary); }
+  .conv-item .conv-title { flex:1; overflow:hidden; text-overflow:ellipsis; }
+  .conv-del { border:none; background:none; cursor:pointer; font-size:12px; color:var(--muted); padding:1px 5px; border-radius:4px; opacity:0; flex-shrink:0; }
+  .conv-item:hover .conv-del { opacity:1; }
+  .conv-del:hover { background:#ecf5ff; color:var(--primary); }
+  #sidebar .foot { padding:12px 16px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); display:flex; justify-content:space-between; align-items:center; }
+  #logout { border:none; background:none; color:var(--primary); cursor:pointer; font-size:12px; }
+
+  /* 对话区 */
+  #main { flex:1; display:flex; flex-direction:column; }
+  #chat-area { flex:1; overflow-y:auto; padding:20px 24px; }
+  .msg { display:flex; margin-bottom:16px; }
+  .msg .avatar { width:34px; height:34px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; flex-shrink:0; }
+  .msg.user { flex-direction:row-reverse; }
+  .msg.user .avatar { background:#67c23a; }
+  .msg.assistant .avatar { background:var(--primary); }
+  .bubble { max-width:70%; padding:11px 14px; border-radius:8px; line-height:1.7; font-size:14px; white-space:pre-wrap; word-break:break-word; }
+  .msg.user .bubble { background:var(--primary); color:#fff; margin-right:10px; }
+  .msg.assistant .bubble { background:var(--card); border:1px solid var(--border); margin-left:10px; }
+  .bubble .cursor { display:inline-block; width:2px; height:16px; background:var(--primary); vertical-align:-2px; animation:blink .8s infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  .refs { margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12px; color:var(--muted); }
+  .refs .tag { display:inline-block; background:#f0f9eb; color:#67c23a; border-radius:3px; padding:1px 6px; margin:2px 4px 2px 0; font-size:11px; }
+  .empty-tip { text-align:center; color:var(--muted); margin-top:80px; font-size:14px; line-height:2; }
+
+  /* 快捷提问 */
+  #chips { padding:0 24px 10px; display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { padding:5px 12px; background:#ecf5ff; color:var(--primary); border-radius:14px; font-size:12px; cursor:pointer; border:none; }
+  .chip:hover { background:#d9ecff; }
+
+  /* 输入区 */
+  #input-bar { padding:12px 24px 20px; display:flex; gap:10px; }
+  #question-input { flex:1; padding:11px 14px; border:1px solid var(--border); border-radius:8px; font-size:14px; outline:none; }
+  #question-input:focus { border-color:var(--primary); }
+  #send-btn { padding:0 26px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
+  #send-btn:disabled { background:#a0cfff; cursor:not-allowed; }
+</style>
+</head>
+<body>
+
+<!-- 登录视图 -->
+<div id="login-view">
+  <div class="login-card">
+    <h1>蜀道安全助手</h1>
+    <p>AI 安全问答 Demo（RAG + 流式输出）</p>
+    <input id="login-user" placeholder="用户名" autocomplete="username">
+    <input id="login-pass" type="password" placeholder="密码" autocomplete="current-password">
+    <div class="row">
+      <button class="btn-primary" id="login-btn">登 录</button>
+      <button class="btn-plain" id="register-btn">注册新账号</button>
+    </div>
+    <div class="tip">演示账号：注册后即可使用。流式问答调用 DeepSeek + RAG 知识库，回答带引用来源。</div>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="app-view" class="hidden">
+  <aside id="sidebar">
+    <div class="brand">🤖 蜀道安全助手</div>
+    <button id="new-chat">＋ 新建会话</button>
+    <div id="conv-list"></div>
+    <div class="foot"><span id="user-name"></span><button id="logout">退出</button></div>
+  </aside>
+  <main id="main">
+    <div id="chat-area">
+      <div class="empty-tip">👋 你好！我是蜀道安全助手。<br>可以问我关于安全生产的问题，例如：<br>「高处作业有什么安全要求？」「防汛应急预案如何分级？」</div>
+    </div>
+    <div id="chips"></div>
+    <div id="input-bar">
+      <input id="question-input" placeholder="输入你的问题，回车发送…">
+      <button id="send-btn">发 送</button>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ============ 状态 ============ */
+let token = localStorage.getItem('sd_token') || '';
+let currentConvId = null;
+let streaming = false;
+
+/* ============ 工具 ============ */
+async function api(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch(path, { ...options, headers });
+  if (resp.status === 401) { showLogin(); throw new Error('登录已过期'); }
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try { detail = (await resp.json()).detail || detail; } catch (e) {}
+    throw new Error(detail);
+  }
+  return resp;
+}
+
+/* ============ 登录 / 注册 ============ */
+function showLogin() {
+  token = ''; localStorage.removeItem('sd_token');
+  document.getElementById('login-view').classList.remove('hidden');
+  document.getElementById('app-view').classList.add('hidden');
+}
+async function doLogin() {
+  const username = document.getElementById('login-user').value.trim();
+  const password = document.getElementById('login-pass').value;
+  if (!username || !password) { alert('请输入用户名和密码'); return; }
+  try {
+    const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    if (!r.ok) { alert('登录失败：' + ((await r.json()).detail || '账号或密码错误')); return; }
+    const data = await r.json();
+    token = data.access_token;
+    localStorage.setItem('sd_token', token);
+    document.getElementById('user-name').textContent = data.user.real_name || data.user.username;
+    enterApp();
+  } catch (e) { alert('网络错误：' + e.message); }
+}
+async function doRegister() {
+  const username = document.getElementById('login-user').value.trim();
+  const password = document.getElementById('login-pass').value;
+  if (!username || !password) { alert('请输入用户名和密码'); return; }
+  try {
+    const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    if (!r.ok) {
+      // 422 的 detail 是校验错误数组，需格式化（否则显示 [object Object]）
+      let err = '注册失败';
+      try {
+        const d = await r.json();
+        const detail = d.detail;
+        if (Array.isArray(detail)) err += '：' + detail.map(x => (x.msg || '')).join('；');
+        else if (typeof detail === 'string') err += '：' + detail;
+      } catch(_){}
+      alert(err); return;
+    }
+    alert('注册成功，请登录');
+  } catch (e) { alert('网络错误：' + e.message); }
+}
+
+/* ============ 进入应用 ============ */
+async function enterApp() {
+  document.getElementById('login-view').classList.add('hidden');
+  document.getElementById('app-view').classList.remove('hidden');
+  await loadConversations();
+  await loadQuickQuestions();
+}
+async function loadConversations() {
+  try {
+    const r = await api('/api/conversations');
+    const list = await r.json();
+    const el = document.getElementById('conv-list');
+    el.innerHTML = '';
+    list.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'conv-item' + (c.id === currentConvId ? ' active' : '');
+      div.dataset.id = c.id;
+      const t = document.createElement('span');
+      t.className = 'conv-title';
+      t.textContent = c.title || '新会话';
+      div.appendChild(t);
+      const del = document.createElement('button');
+      del.className = 'conv-del';
+      del.textContent = '✕';
+      del.title = '删除会话';
+      del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
+      div.appendChild(del);
+      div.onclick = () => openConversation(c.id);
+      el.appendChild(div);
+    });
+  } catch (e) { console.warn('会话列表加载失败', e); }
+}
+async function deleteConversation(id) {
+  if (!confirm('确定删除该会话及其全部消息？')) return;
+  try {
+    await api('/api/conversations/' + id, { method: 'DELETE' });
+    if (currentConvId === id) {
+      currentConvId = null;
+      document.getElementById('chat-area').innerHTML = '<div class="empty-tip">👋 会话已删除，开始新提问吧～</div>';
+    }
+    loadConversations();
+  } catch (e) { alert('删除失败：' + e.message); }
+}
+async function openConversation(id) {
+  currentConvId = id;
+  document.querySelectorAll('.conv-item').forEach(n => n.classList.remove('active'));
+  const area = document.getElementById('chat-area');
+  area.innerHTML = '';
+  try {
+    const r = await api(`/api/conversations/${id}/messages`);
+    const msgs = await r.json();
+    msgs.forEach(m => renderMessage(m));
+    if (!msgs.length) area.innerHTML = '<div class="empty-tip">该会话暂无消息，开始提问吧～</div>';
+    loadConversations();
+  } catch (e) { area.innerHTML = '<div class="empty-tip">加载失败：' + e.message + '</div>'; }
+}
+async function loadQuickQuestions() {
+  try {
+    const r = await api('/api/chat/quick-questions');
+    const qs = await r.json();
+    const el = document.getElementById('chips');
+    el.innerHTML = '';
+    qs.forEach(q => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.textContent = q.label;
+      b.onclick = () => { document.getElementById('question-input').value = q.question; send(); };
+      el.appendChild(b);
+    });
+  } catch (e) {}
+}
+
+/* ============ 消息渲染 ============ */
+function renderMessage(msg, streamingEl) {
+  const area = document.getElementById('chat-area');
+  const empty = area.querySelector('.empty-tip');
+  if (empty) empty.remove();
+  const row = document.createElement('div');
+  row.className = 'msg ' + (msg.role === 'user' ? 'user' : 'assistant');
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = msg.role === 'user' ? '我' : 'AI';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = msg.content || '';
+  row.appendChild(avatar);
+  row.appendChild(bubble);
+  // 引用来源（A06，领导优化：按 doc_type 四类分颜色）
+  if (msg.refs) {
+    try {
+      const refs = JSON.parse(msg.refs);
+      if (Array.isArray(refs) && refs.length) {
+        const box = document.createElement('div');
+        box.className = 'refs';
+        const TYPE_META = {
+          '法规/制度': { color:'#2563eb', label:'法规' },
+          '操作规程': { color:'#7c3aed', label:'规程' },
+          '应急预案': { color:'#d97706', label:'预案' },
+          '事故案例': { color:'#16a34a', label:'案例' },
+        };
+        refs.forEach(s => {
+          const meta = TYPE_META[s.doc_type] || { color:'#6b7280', label:'其他' };
+          const tag = document.createElement('span');
+          tag.className = 'tag tag-link';
+          tag.textContent = `【${meta.label}】${s.doc || ''}${s.chapter ? '·' + s.chapter : ''}`.slice(0, 32);
+          tag.style.cursor = 'pointer';
+          tag.style.background = meta.color + '18';
+          tag.style.color = meta.color;
+          tag.style.border = '1px solid ' + meta.color + '40';
+          tag.title = '查看原件';
+          tag.onclick = () => openKbDoc(s.source, s.doc_type);
+          box.appendChild(tag);
+        });
+        bubble.appendChild(box);
+      }
+    } catch (e) {}
+  }
+  area.appendChild(row);
+  area.scrollTop = area.scrollHeight;
+  return bubble;
+}
+
+/* ============ 流式问答 ============ */
+async function send() {
+  const input = document.getElementById('question-input');
+  const question = input.value.trim();
+  if (!question || streaming) return;
+  input.value = '';
+  streaming = true;
+  document.getElementById('send-btn').disabled = true;
+
+  renderMessage({ role: 'user', content: question });
+  const bubble = renderMessage({ role: 'assistant', content: '' });
+  bubble.appendChild(spanCursor());
+
+  try {
+    const resp = await api('/api/chat', {
+      method: 'POST',
+      body: JSON.stringify({ question, conversation_id: currentConvId || null }),
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let answer = '';
+    let firstToken = true;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const dataLine = frame.split('\n').find(l => l.startsWith('data:'));
+        if (!dataLine) continue;
+        const payload = dataLine.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const obj = JSON.parse(payload);
+          if (obj.delta) {
+            if (firstToken) { bubble.querySelector('.cursor')?.remove(); firstToken = false; }
+            answer += obj.delta;
+            bubble.textContent = answer;
+            document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight;
+          }
+          if (obj.error) {
+            bubble.querySelector('.cursor')?.remove();
+            bubble.textContent = '❌ ' + obj.error;
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (e) {
+    bubble.querySelector('.cursor')?.remove();
+    bubble.textContent = '❌ ' + e.message;
+  } finally {
+    streaming = false;
+    document.getElementById('send-btn').disabled = false;
+    // 流结束：刷新会话列表（新会话时后端自动创建），并选中最新会话
+    await loadConversations();
+    const first = document.querySelector('.conv-item');
+    if (first && (!currentConvId)) {
+      const id = parseInt(first.dataset.id, 10);
+      if (id) openConversation(id);
+    }
+  }
+}
+function spanCursor() {
+  const s = document.createElement('span');
+  s.className = 'cursor';
+  return s;
+}
+
+/* ============ 事件绑定 ============ */
+document.getElementById('login-btn').onclick = doLogin;
+document.getElementById('register-btn').onclick = doRegister;
+document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('logout').onclick = showLogin;
+document.getElementById('new-chat').onclick = () => {
+  currentConvId = null;
+  document.querySelectorAll('.conv-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('chat-area').innerHTML = '<div class="empty-tip">👋 新会话，开始提问吧～</div>';
+};
+document.getElementById('send-btn').onclick = send;
+document.getElementById('question-input').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+/* 会话项存 id 供选中 */
+document.addEventListener('DOMContentLoaded', () => {
+  if (token) { doLoginSilent(); }
+});
+async function doLoginSilent() {
+  // token 存在时静默验证（/me 探测）
+  try {
+    const r = await api('/api/auth/me');
+    const u = await r.json();
+    document.getElementById('user-name').textContent = u.real_name || u.username;
+    enterApp();
+  } catch (e) { showLogin(); }
+}
+
+/* ============ Markdown 阅读器（引用来源查看原件） ============ */
+const DOC_TYPE_DIR = { '法规/制度':'laws', '操作规程':'procedures', '应急预案':'plans', '事故案例':'cases' };
+function mdRender(md) {
+  // 轻量 md → HTML：标题/列表/引用/代码块/加粗/段落
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const lines = String(md).replace(/\r\n/g, '\n').split('\n');
+  const out = []; let inCode = false, inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of lines) {
+    const l = raw.replace(/\s+$/,'');
+    if (l.startsWith('```')) { closeList(); out.push(inCode ? '</code></pre>' : '<pre><code>'); inCode = !inCode; continue; }
+    if (inCode) { out.push(esc(l)); continue; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if (h) { closeList(); const n = h[1].length; out.push(`<h${n}>${esc(h[2])}</h${n}>`); continue; }
+    if (/^[-*•]\s+/.test(l)) { if (!inList) { out.push('<ul>'); inList = true; } out.push(`<li>${esc(l.replace(/^[-*•]\s+/,''))}</li>`); continue; }
+    if (/^\d+[.、]\s+/.test(l)) { if (!inList) { out.push('<ul>'); inList = true; } out.push(`<li>${esc(l.replace(/^\d+[.、]\s+/,''))}</li>`); continue; }
+    if (l.startsWith('> ')) { closeList(); out.push(`<blockquote>${esc(l.slice(2))}</blockquote>`); continue; }
+    if (!l.trim()) { closeList(); continue; }
+    closeList();
+    out.push(`<p>${esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</p>`);
+  }
+  closeList(); if (inCode) out.push('</code></pre>');
+  return out.join('\n');
+}
+async function openKbDoc(source, docType) {
+  // source 形如 knowledge_src/laws/xxx.md；docType 中文 → 目录名
+  if (!source) return alert('该引用缺少来源文件');
+  let path = source;
+  if (!path.startsWith('knowledge_src/')) {
+    const dir = DOC_TYPE_DIR[docType] || 'laws';
+    path = 'knowledge_src/' + dir + '/' + path.split(/[\\/]/).pop();
+  }
+  let overlay = document.getElementById('kb-reader');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'kb-reader';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = '<div style="background:#fff;width:min(880px,94vw);height:86vh;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.3)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid #e4e7ed;background:#f5f7fa">'
+      + '<b id="kb-title" style="font-size:14px;color:#303133;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>'
+      + '<button onclick="closeKbReader()" style="border:none;background:#ecf5ff;color:#409EFF;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px">✕ 关闭</button></div>'
+      + '<div id="kb-body" style="flex:1;overflow-y:auto;padding:20px 26px;font-size:14px;line-height:1.8;color:#303133"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('kb-title').textContent = path.split('/').pop();
+  const body = document.getElementById('kb-body');
+  body.innerHTML = '<div style="color:#909399;padding:30px;text-align:center">加载中…</div>';
+  overlay.style.display = 'flex';
+  try {
+    const r = await api('/api/kb/doc?path=' + encodeURIComponent(path));
+    const d = await r.json();
+    body.innerHTML = '<h1 style="font-size:18px;margin-bottom:14px">📄 ' + esc2(d.name) + '</h1>' + mdRender(d.content);
+  } catch (e) { body.innerHTML = '<div style="color:#F56C6C;padding:20px">加载失败：' + esc2(e.message) + '</div>'; }
+}
+function esc2(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function closeKbReader() { const o = document.getElementById('kb-reader'); if (o) o.style.display = 'none'; }
+</script>
+</body>
+</html>

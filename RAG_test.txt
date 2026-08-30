@@ -1,0 +1,10 @@
+===== 分跳数汇总 =====
+跳数         题数    平均Recall      命中率      全中率
+single     60        0.95                  95%            95%
+double     80        0.67                92%           41%
+multi      60        0.36                  63%            8%
+ALL       200        0.66                  84%          48%
+
+指标说明：平均Recall=命中期望文档数/期望总数；命中率=至少命中1份；全中率=期望文档全部召回
+P2 验收看 ALL 的 平均Recall@10 ≥ 0.80。multi 行偏低属正常；但若 multi 全中率≈0，多为 FUSE_TOPK 过小或重排把同主题文档挤掉。
+PS D:\code\aicode\ai智能体开发实战5期\weekend\ShuDao Smart AI Security Assistant\team\backend>

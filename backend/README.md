@@ -41,7 +41,7 @@ PYTHONPATH= C:\python\python.exe -m uvicorn src.main:app --reload --port 8000
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/auth/register | 注册（角色固定 employee，安全约定不接受 role） |
+| POST | /api/auth/register | 注册（默认 employee，可指定 safety_officer；admin 禁止注册） |
 | POST | /api/auth/login | 登录，返回 JWT |
 | GET  | /api/auth/me | 当前用户（Bearer token） |
 
@@ -57,3 +57,4 @@ PYTHONPATH= C:\python\python.exe -m pytest tests/ -v
 ```
 
 依赖本机 MySQL（shudao_safety 库，root/123456）。表结构由 P3 线 schema 管理，应用不自动建表。
+

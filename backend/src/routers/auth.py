@@ -9,12 +9,12 @@ from src.services.auth_service import AuthService
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
- 
+  
 @router.post(
     "/register",
     response_model=UserOut,
     status_code=201,
-    summary="用户注册（新用户角色固定为普通员工）",
+    summary="用户注册（默认普通员工，可指定安全员；管理员禁止注册）",
 )
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     return AuthService.register(db, data)

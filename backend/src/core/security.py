@@ -58,3 +58,21 @@ def get_current_user(
         )
     payload = decode_access_token(credentials.credentials)
     return {"id": int(payload["sub"]), "role": payload.get("role", "employee")}
+
+
+def require_roles(*roles: str):
+    """RBAC 依赖工厂：当前用户角色必须在 roles 中，否则 403。
+
+    用法：`user: dict = Depends(require_roles("admin", "safety_officer"))`
+    （PRD 权限模型：派单/验收仅 admin 与 safety_officer 可用）
+    """
+
+    def _checker(payload: dict = Depends(get_current_user)) -> dict:
+        if payload["role"] not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"权限不足：需要角色 {'/'.join(roles)}",
+            )
+        return payload
+
+    return _checker

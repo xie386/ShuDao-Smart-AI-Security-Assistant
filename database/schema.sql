@@ -93,3 +93,75 @@ CREATE TABLE IF NOT EXISTS `ppt_tasks` (
   KEY `ix_ppt_tasks_user_id` (`user_id`),
   CONSTRAINT `ppt_tasks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ------------------------------------------------------------
+-- 考试工坊（优化丰富期新增）：试卷生成记录表
+-- 业务：提示词/文档输入 → 出卷子智能体生成试卷+参考答案 → 导出 md/docx/pdf
+-- 模式对齐 ppt_tasks：状态机（草稿→生成中→已完成/失败）+ file_path 落库
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `exam_papers` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `paper_id` varchar(32) NOT NULL,
+  `title` varchar(128) NOT NULL,
+  `template` varchar(32) NOT NULL DEFAULT 'general',
+  `input_type` enum('prompt','document') NOT NULL DEFAULT 'prompt',
+  `input_text` text,
+  `input_file` varchar(255) DEFAULT NULL,
+  `exam_content` longtext,
+  `export_format` enum('md','docx','pdf') DEFAULT NULL,
+  `file_path` varchar(255) DEFAULT NULL,
+  `status` enum('草稿','生成中','已完成','失败') NOT NULL DEFAULT '草稿',
+  `error` varchar(255) DEFAULT NULL,
+  `created_by` int NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT (now()),
+  `updated_at` datetime NOT NULL DEFAULT (now()),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_exam_papers_paper_id` (`paper_id`),
+  KEY `ix_exam_papers_created_by` (`created_by`),
+  CONSTRAINT `exam_papers_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---- 知识贡献模块（优化丰富期：全员可上传 → admin 审核 → 审核通过才入向量库）----
+CREATE TABLE IF NOT EXISTS `knowledge_contributions` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `title` varchar(128) NOT NULL,
+  `content` mediumtext NOT NULL,
+  `file_intro` text,
+  `file_path` varchar(255) DEFAULT NULL,
+  `doc_type` enum('laws','procedures','plans','cases') NOT NULL DEFAULT 'laws',
+  `contributor_id` int NOT NULL,
+  `status` enum('待审核','已入库','已驳回') NOT NULL DEFAULT '待审核',
+  `review_note` text,
+  `review_by` int DEFAULT NULL,
+  `chunk_count` int DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT (now()),
+  `updated_at` datetime NOT NULL DEFAULT (now()),
+  PRIMARY KEY (`id`),
+  KEY `ix_knowledge_contributions_contributor` (`contributor_id`),
+  KEY `ix_knowledge_contributions_status` (`status`),
+  CONSTRAINT `knowledge_contributions_ibfk_1` FOREIGN KEY (`contributor_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `knowledge_contrib_timeline` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `contrib_id` int NOT NULL,
+  `action` varchar(64) NOT NULL,
+  `operator_id` int DEFAULT NULL,
+  `note` text,
+  `created_at` datetime NOT NULL DEFAULT (now()),
+  PRIMARY KEY (`id`),
+  KEY `ix_knowledge_contrib_timeline_contrib` (`contrib_id`),
+  CONSTRAINT `knowledge_contrib_timeline_ibfk_1` FOREIGN KEY (`contrib_id`) REFERENCES `knowledge_contributions` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- 个人主页扩展资料（P3 之后新增表；users 表零改动，严格守 P3「勿改表」铁律）
+CREATE TABLE IF NOT EXISTS `user_profiles` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `email` varchar(128) DEFAULT NULL,
+  `avatar` varchar(255) DEFAULT NULL,
+  `updated_at` datetime NOT NULL DEFAULT (now()),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_profiles_user` (`user_id`),
+  CONSTRAINT `user_profiles_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
