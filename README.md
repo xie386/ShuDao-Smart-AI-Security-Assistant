@@ -123,7 +123,8 @@ team/
 | --- | --- | --- |
 | 2️⃣-1 | `src/core/config.py` | `Settings(BaseSettings)` 从 `.env` 读全部配置。注意：模型地址是本机路径（`D:/LLM/model/bge-large-zh`）+ `cuda` 设备；v2.0 大点 02 起多了 `PPT_*` 一整段（Agent 开关 / 沙箱根 / 页数上限 / Openverse 图片 / OfficeCLI 路径 / `PPT_VISION_*` 视觉段、`PPT_IMAGE_PROVIDER` + `UNSPLASH_*` 图源段）。思考：为什么嵌入模型用本地路径而不是 API？（课程要求本地部署 + 中文检索质量）为什么把「模型/图片源/编辑器路径」都做成配置？（换模型、换图库、换机器都不改代码） |
 | 2️⃣-2 | `src/core/db.py` | SQLAlchemy 2.x 引擎 + `get_db` 依赖。注意 docstring 强调「**不自动建表**」。思考：为什么 FastAPI 用 `Depends(get_db)` 而不是全局 Session？（请求级隔离，用完即关，防连接泄漏） |
-| 2️⃣-3 | `src/core/redis_client.py` | Redis 连接池。注意端口 **6380**（非默认 6379）、密码 123456、`ping_redis()` 优雅探测（服务未启动不崩）。思考：Redis 挂了系统还能用吗？（能——通知 push 优雅降级，见 notification_service） |
+| 2️⃣-3 | `src/core/redis_client.py` | Redis 连接池。注意端口 **6380**（非默认 6379）、`protocol=2`（兼容 Redis<6 的 RESP2）、`ping_redis()` 优雅探测（服务未启动不崩）。**v2.0 大点 05 起**：`redis_client` 改成**惰性代理** `_LazyRedis`（首次命令才建池，这样"运行时覆写 REDIS_URL"才生效），并新增 `reset()` 与**首次连接自愈**（服务端没设密码时自动去掉 auth）。思考：Redis 挂了系统还能用吗？（能——通知 push 优雅降级，见 notification_service）为什么客户端要惰性而不是 import 时建池？ |
+| 2️⃣-7 | `src/core/redis_boot.py` | **v2.0 大点 05 · 内置 Redis 启动器**（268 行）：`lifespan` 里 `ensure()` 三态 —— **复用外部**（双探针 `as_is`/`no_auth`）→ **拉起内置**（`tools/redis/` 最小集，`--bind 127.0.0.1 --save "" --appendonly no --maxmemory 256mb`）→ **降级**；`stop()` 只结束自己拉起的 pid，并用 Windows **Job Object**（`KILL_ON_JOB_CLOSE`）保证硬杀父进程时子进程一起回收。思考：为什么必须先探测再拉起？（复用用户自己的实例，且第二次启动不能双启）为什么"带密码 URL + 无密码实例"需要两个探针？（客户端带 `AUTH` 打无密码实例会直接报错，第二个后端会误判"外部不可用"） |
 | 2️⃣-4 | `src/core/security.py` | bcrypt 密码哈希 + JWT 签发/校验。注意 docstring 强调「**不引入 passlib**」（bcrypt>=5.0 与 passlib 兼容问题）。思考：为什么密码要哈希而不是加密？（哈希不可逆，库泄露不还原明文）JWT 的 SECRET_KEY 在哪配置？ |
 | 2️⃣-5 | `src/core/paths.py` | **v2.0 大点 02 · 账号沙箱路径的唯一事实源**（153 行，仿 deep_search_pro 的归口模式）：`user_root / task_root / task_dir / out_path / log_path / cleanup_task` + 三个安全函数（`safe_name` 只取 basename、`safe_join` 根内校验、`is_within` 双路径判断）。**只给路径、不建目录**；目录名只由整数 id 拼（`u17/t11`），天然免疫 `..` 与盘符注入。思考：为什么账号目录不用 username？（可改名 → 目录失联）为什么"只给路径不建目录"？（避免读的时候顺手建目录这种隐形副作用） |
 | 2️⃣-6 | `src/core/__init__.py` | 空包标记。思考：为什么 Python 包都要有 `__init__.py`？（标记目录为包，可被 import） |
@@ -156,7 +157,7 @@ team/
 | 3️⃣-16 | `src/ai/ppt_layout.py` | **v2.0 大点 02 · 版式渲染**：把页面规格翻成 OfficeCLI batch 命令（封面/目录/章节/内容/来源/结尾）。**几何由代码定、内容由模型定**：模型不吐坐标，版式才可复现。要点：`build()` 末尾统一补 `parent=/slide[N]`（漏了整批失败，实测第一批命令就栽在这）、6 条以上走双栏、主题色可由模板 `theme1.xml` 覆盖、`_fix` 驱动修补。思考：为什么两栏阈值是 5 条？（20pt 单栏在 5.2in 高里刚好占满，再多就压线） |
 | 3️⃣-17 | `src/ai/ppt_tools.py` | **v2.0 大点 02 · 工具实现**：OfficeCLI 薄封装（create/batch/screenshot/issues/validate/**release_file**）、多图源检索与流式下载（`current_provider()`：Unsplash 默认 / Openverse 备选；重试 1 次、体积上限、等比缩放在 ppt_layout）、`kb_search`（复用 01 的 RAG）、沙箱只读文件。两个实测坑：`batch` 走 `--input` 临时文件而不是 stdin（Windows 编码）；OfficeCLI `close` 后仍有几百毫秒**锁窗**，不 `release_file()` 就删不掉文件。思考：为什么图片失败一律返回空列表而不抛异常？（一张图不能拖垮整单 —— 裁定 6） |
 | 3️⃣-18 | `src/ai/vision_agent.py` | **v2.0 大点 02 · 审图（多模态独立段）**：`PPT_VISION_*` 默认 AGNES，只给它看截图、只问四类版式问题（溢出/遮挡/对比度/缺失），输出结构化 `{ok, problems, fix_hints}`。关键坑：它先吐 `reasoning_content` 再吐 `content`，`max_tokens` 给小了 `content` 直接为空（实测 40 → 空）→ 默认 800 且只读 `content`。失败/超时一律 `ok=True + skipped`。思考：为什么审图不能当成必需步骤？（自检是加分项，不能变成故障点） |
-| 3️⃣-21 | `src/ai/agent_scout.py` | **v2.0 大点 04 · Agent 网搜采集**（330 行）：回答发现"知识库缺料"后**异步**启动，Playwright 按方法论搜集 → LLM 总结成 md → 以 `knowledge_scout` 身份提交待审。三道闸：`url_allowed()`（禁 file/localhost/内网/保留 IP，防 SSRF）、`_host_quality()`（百科/文库/问答不采，gov/org/edu 优先）、限额（站点 3/页 8/总 8MB/600s）。思考：为什么采集必须异步且必须人审？为什么方法论只注入这个工具、不进主问答 prompt？ |
+| 3️⃣-21 | `src/ai/agent_scout.py` | **v2.0 大点 04 · Agent 网搜采集**（330 行）：回答发现"知识库缺料"后**异步**启动，Playwright 按方法论搜集 → LLM 总结成 md → 以 `knowledge_scout` 身份提交待审。三道闸：`url_allowed()`（禁 file/localhost/内网/保留 IP，防 SSRF）、`_host_quality()`（百科/文库/问答不采，gov/org/edu 优先）、限额（站点 3/页 8/总 8MB/600s）。**收官前质量加固（v1.1–v1.2）**：搜索源配置化 `KB_SCOUT_ENGINES`（默认 360→搜狗→cn.bing，百度对无头浏览器弹验证码不用）、搜索页/文库不当来源、`_is_relevant()`（关键词命中 + 条款级证据）、`_knowledge_quality()` 闸门（≥1000 字 / ≥5 条 / **正文零链接** / 来源 ≤3 条 URL / 无"缺口·待补录"叙事）、`_strip_links()` 去链接、材料偏少自动补采一轮。思考：为什么采集必须异步且必须人审？为什么方法论只注入这个工具、不进主问答 prompt？为什么"正文零链接"要写进闸门而不是只靠提示词？ |
 | 3️⃣-20 | `src/ai/intent.py` | **v2.0 大点 03 · 意图识别**（178 行）：回答前先判「闲聊 / 知识问答」，闲聊跳过预处理与检索直答。要点：**纯 LLM 单次判定**（提示词 `chat_intent`，不做关键词短路）、**判定客户端独立**（构造级 8s 超时 + `max_retries=0`；`llm_client.chat` 的 60s 超时对闲聊首字是灾难）、**失败一律退回 knowledge 并记 `degraded`**（误判方向代价不对称：知识题被判闲聊=无依据作答）、**带上一轮**（`last_round_hint`）否则「第一问」这类指代追问会被判成闲聊。思考：为什么超时不能靠 `model_copy(request_timeout=…)`？（实测不生效，请求照常成功）为什么判定器"永不抛异常"是硬约束？（它跑在 `event_stream()` 第一行，抛了就是整轮 500） |
 | 3️⃣-19 | `src/ai/ppt_llm.py` | **可选直连 PPT LLM 的抽象位**（裁定 2）：`PptLlmProvider` 协议 + 空注册表 + `capabilities()`。百度实现已删（裁定 1），这里只留"以后接付费 PPT LLM 不用改业务代码"的位置。思考：为什么留一个空注册表也值得？（成本近零，却保住了产品形态上的"两种工作方式"） |
 
@@ -179,13 +180,13 @@ team/
 | 4️⃣-7 | `src/services/exam_service.py` | 考试工坊业务：试卷任务状态机（生成中→已完成/失败）+ 出卷 + 导出。流程：创建任务 → exam_agent.generate_paper → 成功写 exam_content / 失败写 error → export 落盘 uploads/exam/。思考：它和 ppt_service 的状态机设计有什么相似？（都是「异步任务 + 状态 + file_path」模式） |
 | 4️⃣-8 | `src/services/exam_export.py` | 试卷导出三格式：md / docx（python-docx）/ pdf（reportlab）。思考：为什么导出要落盘返回相对路径而不是直接返回字节流？（落盘可复用、可下载、与上传文件统一管理） |
 | 4️⃣-9 | `src/services/knowledge_contrib_service.py` | **知识贡献业务（K01–K06）**。K01 multipart 上传：校验扩展名/大小 → 存盘 uploads/kb_contrib/ → `_extract_file_text` 解析（md/txt 双编码兜底 / docx / pdf pymupdf）→ content=全文、file_intro=简介；审核通过 → **kb_govern 清洗 → quality_check 校验（不达标 422）→ upsert_chunks 增量入库**。注意 `_CONTENT_MIN` 最小字数门槛。思考：为什么 content 存文件全文而不是简介？（分块入库需要真实内容）为什么审核通过才入库？（防污染知识库）为什么清洗在入库前？（用户文件可能含 HTML 残留/乱码/噪声行） |
-| 4️⃣-10 | `src/services/kb_govern.py` | **在线清洗治理（知识贡献独有链路）**：`clean_text`（HTML 剥离 / 控制字符 / 噪声行剔除 / 空白压缩 / 相邻重复行去重）+ `quality_check`（字数 ≥300 / 重复段落 ≤40% / 乱码 ≤5% / HTML 残留检测）。思考：它和 scripts/govern_html.py 的分工？（govern_html 治理**采集的网页**，kb_govern 治理**用户上传文件**，两条通道各自清洗） |
+| 4️⃣-10 | `src/services/kb_govern.py` | **在线清洗治理（知识贡献独有链路）**：`clean_text`（HTML 剥离 / 控制字符 / 噪声行剔除 / 空白压缩 / 相邻重复行去重）+ `quality_check`（字数 ≥300 / 重复段落 ≤40% / 乱码 ≤5% / HTML 残留检测）；**04 起新增 `clean_for_index()`**——入库前删内联 `[来源: …]`、裸 URL 与末尾「来源/参考资料」整节（**文件保留来源供审核，语料不留链接**）。思考：它和 scripts/govern_html.py 的分工？（govern_html 治理**采集的网页**，kb_govern 治理**用户上传文件**，两条通道各自清洗）为什么"来源"要留在文件里、却不能进向量库？ |
 | 4️⃣-11 | `src/services/stats_service.py` | H07 统计：隐患类型分布 / 整改率 / 7 天趋势。SQLAlchemy `func.count` + group_by 聚合，**不加载全表**。思考：为什么统计要在 SQL 层聚合而不是 Python 层？（大数据量下性能差几个数量级） |
 | 4️⃣-12 | `src/services/user_profile_service.py` | 个人主页业务：`get_profile`（合并 users + user_profiles）/ `_get_or_create`（首次访问自动建空 profile）/ 改用户名查重（409）/ 改密旧密码校验（401）/ 改邮箱格式校验（422）/ 绑头像（URL 必须以 /uploads/ 开头）。思考：为什么邮箱格式校验在 service 而不在 schema？（复用性 + 前端可自由调；schema 只做必填校验） |
 | 4️⃣-13 | `src/services/conv_rag_cache.py` | **v2.0 大点 01 · 会话级子块缓存（Redis）**，替代旧的「逐字问题 md5 缓存」。value = `blocks[]`（子块窗口文本 + 精简 metadata + rerank_score）/ `queries[]` / `rewrites[]`，TTL 600s **滑动**（回答完成后才 `touch()`，生成耗时不吃掉 TTL）。要点：**不存父块**（父块 p50 11.7 万字），只存围绕子块的窗口；所有方法 try/except，Redis 挂了静默降级。思考：为什么 `chunk_id` 用「子块文本 md5」而不是 Chroma id？（新检索块与工具补检块两条来源天然对齐）为什么 `touch()` 必须在生成结束的 `finally` 里？ |
 | 4️⃣-16 | `src/services/kb_convert.py` | **v2.0 大点 04 · 贡献文件 → Markdown**（300 行）：md 直通 / txt 补标题 / html(markdownify) / docx+pdf 走 **MinerU**（`mineru-kit`，独立 venv，子进程）/ 兜底（python-docx 段落+表格交错、pymupdf 字号分级+find_tables）。坑：PDF 默认只解析前 10 页（必须 `--pages all`）；MinerU 结果异常短要回退兜底。思考：为什么 MinerU 绝不能 pip 装进后端？（会把 starlette 升到 1.10） |
 | 4️⃣-17 | `src/services/contrib_store.py` | **v2.0 大点 04 · 落盘与回滚**（243 行）：文件名归一化 → **双重查重**（同名文件 + 标题，含 DB 已入库）→ 写 `.tmp_*` → `upsert_file` → rename → 更新 DB；失败删临时文件并回滚已写入的块。思考：为什么查重必须在"转 md 之后"？为什么 rename 必须放在入库成功之后？ |
-| 4️⃣-18 | `src/services/agent_docs.py` | **v2.0 大点 04 · Agent 方法论**（165 行）：`team/Methodology/{Methodology.md, cases.md}` 读写、`.bak` 与版本号（sha1 前 8 位）、`regenerate()`（读案例 → `methodology_writer` → 覆盖，<200 字拒绝写入）。实体文件 gitignore，只推 `.example`。思考：方法论为什么要版本号？（`agent_runs` 可追溯"当时用的哪版"） |
+| 4️⃣-18 | `src/services/agent_docs.py` | **v2.0 大点 04 · Agent 方法论**（165 行）：`team/Methodology/{Methodology.md, cases.md}` 读写、`.bak` 与版本号（sha1 前 8 位）、`regenerate()`（读案例 → `methodology_writer` → 覆盖，<200 字拒绝写入）；**新增 `update_case(id, verdict, reason)`**——审核通过/驳回后把 `#id` 那行的结论从「已提交待审」改写为「审核通过/驳回 #N：理由」，找不到该行则补记（案例库不再是"永远待审核"）。实体文件 gitignore，只推 `.example`。思考：方法论为什么要版本号？（`agent_runs` 可追溯"当时用的哪版"）为什么管理员的驳回理由要写进案例库，而不是只存数据库？ |
 | 4️⃣-14 | `src/services/preprocess_audit.py` | **v2.0 大点 01 · 预处理审计（A08）**：把会话每轮「原问题 → 预处理结果」配对成结构化数据，供 CLI（`scripts/show_preprocessed.py`）与 HTTP（`GET /api/conversations/{id}/preprocess-audit`）**共用同一份实现**。要点：`build_rounds()` 是纯函数（可单测）；尾部只有提问没回答时也返回一轮（生成失败也能审计）；**v2.0 大点 03 起**每轮还带 `intent`，闲聊轮 `preprocessed=None` 但照常成轮。思考：为什么把「脚本」和「接口」的判断逻辑抽到 service 而不是各写一份？（两处口径漂移是最难查的 bug） |
 | 4️⃣-15 | `src/services/ppt_progress.py` | **v2.0 大点 02 · 进度与任务锁（Redis）**：`shudao:ppt:progress:{task_id}`（hash：stage/progress/page/page_total/msg/ttl 2h）+ `shudao:ppt:lock:{task_id}`（SETNX 抢锁，TTL = 整单超时+60）。进度**不进数据库**（`ppt_tasks` 只有四态，改表要动 schema.sql）。Redis 挂了：进度静默失败、锁**降级放行**。思考：为什么锁的 TTL 要略长于整单超时？（进程崩了让锁自己过期，不留死锁） |
 | 4️⃣-16 | `src/services/__init__.py` | 空包标记。 |
@@ -242,7 +243,7 @@ team/
 
 | 顺序 | 文件 | 看什么 / 思考题 |
 | --- | --- | --- |
-| 7️⃣-1 | `src/main.py` | **后端入口**。三要素：uvicorn 启动命令解析（`src.main:app` = 模块:实例）、13 个 router 挂载、静态文件托管（/uploads/ + /safety/）、CORS、`mimetypes.add_type("text/markdown",".md")`（修复 Windows .md 下载变 txt 的 bug）。思考：为什么 .md 要手动注册 MIME？（Windows mimetypes 把 .md 映射为 text/plain，浏览器下载变 txt） |
+| 7️⃣-1 | `src/main.py` | **后端入口**。三要素：uvicorn 启动命令解析（`src.main:app` = 模块:实例）、13 个 router 挂载、静态文件托管（/uploads/ + /safety/）、CORS、`mimetypes.add_type("text/markdown",".md")`（修复 Windows .md 下载变 txt 的 bug）。**启动横幅**：除 uvicorn 自己的端口信息外，`lifespan` 里额外打一条 `用户前端入口：{FRONT_BASE_URL}/safety   后端 API 根：/api   接口文档：/docs`（基址取新配置 `FRONT_BASE_URL`，换机器/端口改 `.env` 即可）。思考：为什么 .md 要手动注册 MIME？（Windows mimetypes 把 .md 映射为 text/plain，浏览器下载变 txt）为什么 uvicorn 报的端口还不够，要单独打前端入口？（用户实际打开的是 `/safety` 这个 SPA，端口只是 API 监听） |
 | 7️⃣-2 | `prompt/prompts.yml` | **全部提示词**：主安全问答场景（system_prompt + 引用格式）、hazard_vision（四段式）、ppt_outline、exam 出卷、knowledge_review（判定标准浓缩决策树）。思考：为什么主场景提示词要规定「引用来源格式」？（A06 引用可溯源，答案可验证） |
 
 ---
@@ -376,7 +377,9 @@ team/
 
 - **Python 3.12**（全局 `C:\python`，3.11/3.12 均验证可跑；运行命令须加 `PYTHONPATH=` 前缀规避 hermes-agent venv 注入）
 - **MySQL 8.x**（127.0.0.1:3306，库 `shudao_safety`，utf8mb4）
-- **Redis 7.x**（127.0.0.1:6380，密码 123456，消息通道用；未启动时通知模块优雅降级）
+- **Redis 7.x（已随仓库分发，无需安装）**：`team/tools/redis/`（14.1 MB，`redis-server.exe` + `redis-cli.exe` + 3 个 msys DLL，v7.4.3）。
+  后端启动时 `redis_boot.ensure()` 先按 `REDIS_URL` 探测：**探测到外部实例就复用**（带密码/无密码都认），**探测不到就拉起内置实例**（只 `bind 127.0.0.1`、无密码、不落盘、`maxmemory 256mb`），都不可用时四处链路优雅降级。
+  想用自己的 Redis：改 `.env` 的 `REDIS_URL` 即可；想彻底关掉自动拉起：`REDIS_AUTOSTART=false`；缺失二进制可跑 `python scripts/get_redis.py` 重新下载
 - **NVIDIA GPU**（RTX 3050 + CUDA 12.9，嵌入/重排模型走 cuda；无 GPU 改 `EMBEDDING_DEVICE=cpu`）
 - **本地模型**：`D:/LLM/model/bge-large-zh`（嵌入）、`bge-reranker-base`（重排）
 - **Chroma 1.5.9**（集合 `safety_kb`）

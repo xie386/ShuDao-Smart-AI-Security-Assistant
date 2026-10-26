@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     # ---- 应用 ----
     APP_NAME: str = "蜀道智能安全助手"
+    # 启动日志里展示的前端入口基址（部署到别的机器/端口时改这里）
+    FRONT_BASE_URL: str = "http://127.0.0.1:8000"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
 
@@ -27,6 +29,10 @@ class Settings(BaseSettings):
     )
     # 本机 Redis 在 6380 且开启密码认证（requirepass=123456）
     REDIS_URL: str = "redis://:123456@127.0.0.1:6380/0"
+    # v2.0 大点 05：内置 Redis（tools/redis/，裁定 1–8）
+    REDIS_AUTOSTART: bool = True            # 探测不到时是否拉起内置实例
+    REDIS_BIN_DIR: str = "tools/redis"      # 内置可执行文件目录（相对 team/，也可绝对路径）
+    REDIS_BOOT_TIMEOUT: float = 5.0         # 拉起后等待 PING 的秒数
 
     # ---- AI 模型（P2 线接入；D1 仅占位，避免硬编码散落代码）----
     DEEPSEEK_API_KEY: str = ""

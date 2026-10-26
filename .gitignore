@@ -54,3 +54,7 @@ backend/scripts/_diag_retrieval.py
 Methodology/*.md
 !Methodology/*.md.example
 Methodology/*.bak
+
+# ── v2.0 大点 05：内置 Redis 运行时目录（二进制与 README 入库，数据/日志不入库）──
+tools/redis/data/
+tools/redis/logs/

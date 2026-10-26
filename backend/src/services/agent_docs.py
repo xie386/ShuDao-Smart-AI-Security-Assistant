@@ -91,6 +91,50 @@ def append_case(line: str) -> dict:
     return {"appended": True, "chars": len(existing) + len(line) + 1}
 
 
+def update_case(contrib_id: int, verdict: str, reason: str = "", *,
+                url: str = "", gap: str = "") -> dict:
+    """把案例库里 `#<id>` 那条的结论从「已提交待审」改成实际审核结果。
+
+    贡献经管理员处理后，案例库要能反映"这条到底行不行、为什么"，
+    否则方法论自进化读到全是"待审核"，学不到东西。
+    """
+    p = path_of(CASES)
+    if not p.is_file():
+        return {"updated": False, "reason": "案例库文件不存在"}
+    label = {"已入库": "审核通过", "已驳回": "审核驳回"}.get(verdict, verdict)
+    tail = f"{label} #{contrib_id}"
+    if reason:
+        tail += "：" + " ".join(reason.split())[:120]
+
+    lines = p.read_text(encoding="utf-8").splitlines()
+    hit = 0
+    marker = f"#{contrib_id}"
+    for i, ln in enumerate(lines):
+        if not ln.startswith("20") or marker not in ln:
+            continue
+        head, sep, _old = ln.rpartition("|")
+        if not sep or marker not in _old:
+            continue
+        lines[i] = f"{head.rstrip()} | {tail}"
+        hit += 1
+    if hit:
+        p.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+        return {"updated": True, "lines": hit, "tail": tail}
+
+    # 案例库里没有这条（提交时没写案例 / 案例被清理）→ 补一条完整记录，别让结论丢失
+    import time as _time
+
+    line = " | ".join([
+        _time.strftime("%Y-%m-%d"),
+        (url or "（来源未记录）")[:160],
+        f"缺口「{(gap or '（未记录）')[:40]}」",
+        "补记",
+        tail,
+    ])
+    append_case(line)
+    return {"updated": False, "lines": 0, "tail": tail, "appended": True}
+
+
 def recent_cases(limit_chars: int = _MAX_CASES_CHARS) -> str:
     """取最近的部分案例（文件过大时保留末尾）。"""
     p = path_of(CASES)

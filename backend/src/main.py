@@ -101,6 +101,23 @@ async def lifespan(app: FastAPI):
     """
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
+    # v2.0 大点 05：先保证 Redis 可用（复用外部 → 拉起内置 → 降级），再做检索预热。
+    # 顺序不能反：预热里的会话缓存会摸 Redis；且惰性客户端要在 URL 覆写之后才建池。
+    try:
+        from src.core import redis_boot
+
+        _redis_state = redis_boot.ensure()
+    except Exception as exc:  # noqa: BLE001 —— 启动器自身炸了也不能拖垮服务
+        _redis_state = {"state": "degraded", "message": f"Redis 启动器异常：{type(exc).__name__}: {exc}"}
+        _logging.getLogger(__name__).warning(_redis_state["message"])
+
+    # 启动横幅：uvicorn 只报「服务在 8000」，但用户实际打开的是 /safety 这个 SPA。
+    base = (getattr(settings, "FRONT_BASE_URL", "") or "http://127.0.0.1:8000").rstrip("/")
+    _logging.getLogger(__name__).info(
+        "用户前端入口：%s/safety   后端 API 根：%s/api   接口文档：%s/docs",
+        base, base, base,
+    )
+
     # v2.0 大点 01：后台预热检索链路（BM25 语料/索引 + embedding + 重排模型）。
     # 冷启动实测 ~175s（Chroma 全量读取 159.8s + BM25 构建 14.9s），必须挪到启动阶段，
     # 否则用户第一问要等近 3 分钟（首问预算 60s）。失败只记日志，不影响服务可用。
@@ -119,7 +136,16 @@ async def lifespan(app: FastAPI):
 
         threading.Thread(target=_warm, name="rag-warmup", daemon=True).start()
 
-    yield  # 此处挂起：应用运行期间一直停留在这里，退出时才继续向下执行（可写清理逻辑）
+    try:
+        yield  # 此处挂起：应用运行期间一直停留在这里，退出时才继续向下执行
+    finally:
+        # 只关闭自己拉起的内置实例（外部实例不受影响，裁定 6）
+        try:
+            from src.core import redis_boot
+
+            redis_boot.stop()
+        except Exception:  # noqa: BLE001
+            _logging.getLogger(__name__).debug("关闭内置 Redis 失败", exc_info=True)
 
 
 # 创建 FastAPI 应用实例（uvicorn 要取的那个 app）

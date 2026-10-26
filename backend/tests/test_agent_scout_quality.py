@@ -40,17 +40,23 @@ def test_soft_deny_host_always_rejected():
 
 # ---------------------------------------------------------------- 知识含量闸门
 def _good_md() -> str:
+    """合格样例：正文纯文字、零链接，只在末尾「来源」留 1 条 URL。"""
     lines = [
         "# 井下爆破个体防护要求",
         "",
-        "> Agent 贡献（m） · 来源 2 篇 · 抓取 2026-10-26 · 待人工审核",
+        "> Agent 贡献（m） · 来源 1 篇 · 抓取 2026-10-26 · 待人工审核",
         "",
         "## 关键要求",
     ]
     for i in range(8):
-        lines.append(f"{i + 1}. 爆破作业人员应佩戴防尘口罩并检查气密性 [来源: https://mem.gov.cn/a]")
+        lines.append(
+            f"{i + 1}. 爆破作业人员进入作业面前应佩戴防尘口罩并检查气密性，"
+            f"发现破损或呼吸阻力异常时立即更换，不得带病佩戴。"
+        )
     lines.append("## 依据")
-    lines.append("《金属非金属矿山安全规程》第 6.3.2 条 [来源: https://mem.gov.cn/a]")
+    lines.append("《金属非金属矿山安全规程》第 6.3.2 条。")
+    lines.append("## 来源")
+    lines.append("- https://www.mem.gov.cn/a.shtml")
     return "\n".join(lines)
 
 
@@ -71,7 +77,29 @@ def test_quality_gate_rejects_insufficient_sentinel():
     assert ok is False and "不足以成文" in why
 
 
-def test_quality_gate_rejects_too_few_citations():
-    md = "# 标题\n\n1. 要求 A\n2. 要求 B\n3. 要求 C\n4. 要求 D\n5. 要求 E\n6. 要求 F\n"
+def test_quality_gate_rejects_inline_links():
+    """正文贴链接 = 索引文档，必须拒。"""
+    md = _good_md().replace(
+        "1. 爆破作业人员进入作业面前应佩戴防尘口罩并检查气密性，发现破损或呼吸阻力异常时立即更换，不得带病佩戴。",
+        "1. 佩戴防尘口罩 [来源: https://www.mem.gov.cn/a.shtml]",
+    )
     ok, why = S._knowledge_quality(md, 10)
-    assert ok is False and "引用" in why
+    assert ok is False and "索引文档" in why
+
+
+def test_quality_gate_rejects_too_many_source_urls():
+    md = _good_md() + "\n" + "\n".join(f"- https://www.mem.gov.cn/{i}.shtml" for i in range(6))
+    ok, why = S._knowledge_quality(md, 10)
+    assert ok is False and ("3" in why or "占比" in why)
+
+
+def test_strip_links_removes_inline_and_caps_sources():
+    dirty = _good_md().replace(
+        "1. 爆破作业人员进入作业面前应佩戴防尘口罩并检查气密性，发现破损或呼吸阻力异常时立即更换，不得带病佩戴。",
+        "1. 佩戴防尘口罩。[来源: https://www.mem.gov.cn/a.shtml]",
+    ) + "\n- https://www.mem.gov.cn/b.shtml\n- https://www.mem.gov.cn/c.shtml\n- https://www.mem.gov.cn/d.shtml\n"
+    clean = S._strip_links(dirty)
+    body_urls, ratio = S._link_stats(clean)
+    assert body_urls == 0 and ratio == 0
+    assert clean.count("## 来源") == 1
+    assert len([ln for ln in clean.splitlines() if ln.startswith("- http")]) <= 3

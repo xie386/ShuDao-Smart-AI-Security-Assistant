@@ -381,6 +381,17 @@ def upsert_chunks(chunks: list[dict]) -> int:
     return total
 
 
+def _clean_for_index(text: str) -> str:
+    """入库前清链接（保留原文件不动）：链接/来源节不进向量语料。"""
+    try:
+        from src.services.kb_govern import clean_for_index
+
+        return clean_for_index(text)
+    except Exception:  # noqa: BLE001 —— 清洗失败不阻断入库
+        logger.warning("索引前清链接失败，按原文入库", exc_info=True)
+        return text
+
+
 def upsert_file(
     path: str | Path,
     doc_type: str,
@@ -398,7 +409,7 @@ def upsert_file(
     src = Path(path)
     if doc_type not in SPLITTERS:
         raise ValueError(f"未知 doc_type: {doc_type}（可选 {list(SPLITTERS)}）")
-    text = src.read_text(encoding="utf-8")
+    text = _clean_for_index(src.read_text(encoding="utf-8"))
     doc_name = stem or src.stem
     src_rel = source or str(Path(settings.KNOWLEDGE_SRC_DIR) / doc_type / src.name).replace("\\", "/")
     chunks = SPLITTERS[doc_type](text, doc=doc_name, source=src_rel)
@@ -451,7 +462,7 @@ def build_from_dir(src_dir: str | Path | None = None, doc_type: str | None = Non
             if size < min_bytes:
                 logger.info("  跳过（治理标记 drop/过小）: %s (%dB < %dB)", f.name, size, min_bytes)
                 continue
-            text = f.read_text(encoding="utf-8")
+            text = _clean_for_index(f.read_text(encoding="utf-8"))
             chunks = splitter(text, doc=f.stem, source=str(f))
             all_chunks.extend(chunks)
             by_type[sub] = by_type.get(sub, 0) + len(chunks)

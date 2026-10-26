@@ -487,13 +487,57 @@ def _summarize(gap_question: str, pages: list[Page]) -> str:
     return out
 
 
+_URL_RE = None
+
+
+def _strip_links(md: str, max_sources: int = 3) -> str:
+    """把正文里的链接全部清掉，只在文末保留 ≤3 条来源。
+
+    - 去掉 `[来源: ...]`、`（来源：...）` 这类内联标注；
+    - 去掉正文里的裸 URL（http/https/www.开头）；
+    - 末尾「来源」节重建为最多 3 条纯 URL。
+    """
+    import re as _re
+
+    text = md or ""
+    urls = _re.findall(r"https?://[^\s\)\]<>，。；、]+", text)
+    seen: list[str] = []
+    for u in urls:
+        u = u.rstrip(".,;)")
+        if u not in seen:
+            seen.append(u)
+
+    # 拆出末尾「来源」节
+    body, _, _tail = text.partition("\n## 来源")
+    body = _re.sub(r"\[来源[:：][^\]]*\]", "", body)          # [来源: ...]
+    body = _re.sub(r"[（(]来源[:：][^）)]*[）)]", "", body)      # （来源：...）
+    body = _re.sub(r"https?://\S+", "", body)                  # 裸链接
+    body = _re.sub(r"\bwww\.\S+", "", body)
+    body = _re.sub(r"[ \t]{2,}", " ", body)
+    body = _re.sub(r"\n{3,}", "\n\n", body).strip()
+
+    if seen:
+        tail = "\n\n## 来源\n" + "\n".join(f"- {u}" for u in seen[:max_sources])
+        return body + tail + "\n"
+    return body + "\n"
+
+
+def _link_stats(md: str) -> tuple[int, float]:
+    """正文（末尾来源节之前）的 URL 个数与字符占比。"""
+    import re as _re
+
+    body = (md or "").partition("\n## 来源")[0]
+    urls = _re.findall(r"https?://\S+", body)
+    chars = max(1, len(body))
+    return len(urls), sum(len(u) for u in urls) / chars
+
+
 def _knowledge_quality(md: str, min_chars: int) -> tuple[bool, str]:
     """知识含量闸门：有条款/条目、有引用、长度够，才允许提交。"""
     import re as _re
 
     body = _re.sub(r"^>.*$", "", md, flags=_re.M)
     chars = len(body.strip())
-    cited = len(_re.findall(r"\[来源[:：]", md))
     bullets = len(_re.findall(r"^\s*(?:[-*]|\d+[.、])\s+\S", body, flags=_re.M))
     banned = ("缺口说明", "待补录", "本次结论：未取得", "后续需要补充核实", "知识库维护操作步骤")
     if md.strip() == "INSUFFICIENT":
@@ -502,11 +546,19 @@ def _knowledge_quality(md: str, min_chars: int) -> tuple[bool, str]:
         return False, "文档是缺口/待补录叙事，不是知识条目"
     if chars < min_chars:
         return False, f"正文 {chars} 字 < {min_chars}"
-    if cited < 3 or bullets < 5:
-        return False, f"引用 {cited} 处 / 条目 {bullets} 条，疑似空泛文档"
+    if bullets < 5:
+        return False, f"条目仅 {bullets} 条，疑似空泛文档"
+    body_urls, ratio = _link_stats(md)
+    total_urls = len(_re.findall(r"https?://\S+", md))
+    if body_urls > 0 or "[来源" in body:
+        return False, f"正文仍含 {body_urls} 个链接/内联标注，属索引文档"
+    if total_urls > 3:
+        return False, f"来源 URL {total_urls} 条 > 3（污染语料）"
+    if ratio > 0.02:
+        return False, f"链接字符占比 {ratio:.1%} 过高"
     if not _has_clause(md) and bullets < 8:
         return False, "正文既无条款号也无足够条目"
-    return True, f"{chars} 字 / {cited} 处引用 / {bullets} 条"
+    return True, f"{chars} 字 / {bullets} 条 / 来源 {total_urls} 条"
 
 
 def _record_start(conversation_id: int, question: str) -> int | None:
@@ -604,10 +656,7 @@ def _with_provenance(md: str, pages: list[Page]) -> str:
     if not lines:
         return md
     stamp = time.strftime("%Y-%m-%d")
-    urls = "、".join(p.url for p in pages[:3])
     note = f"> Agent 贡献（{settings.DEEPSEEK_MODEL}） · 来源 {len(pages)} 篇 · 抓取 {stamp} · 待人工审核"
-    if len(urls) <= 120:
-        note += f" · {urls}"
     return "\n".join([lines[0], "", note, ""] + lines[1:])
 
 
@@ -645,6 +694,7 @@ def run(conversation_id: int, gap_question: str) -> dict:
             logger.debug("案例回写失败", exc_info=True)
         return {"ok": False, "reason": "insufficient", "note": "model_insufficient"}
 
+    md = _strip_links(md)
     md = _with_provenance(md, collected.pages)
     title = (md.splitlines()[0] or "").lstrip("# ").strip()[:120] or gap_question[:60]
 
@@ -660,7 +710,7 @@ def run(conversation_id: int, gap_question: str) -> dict:
             collected.visited.extend(more.visited)
             md = _summarize(gap_question, collected.pages)
             if md.strip() != "INSUFFICIENT":
-                md = _with_provenance(md, collected.pages)
+                md = _with_provenance(_strip_links(md), collected.pages)
                 title = (md.splitlines()[0] or "").lstrip("# ").strip()[:120] or gap_question[:60]
                 ok_doc, why_doc = _knowledge_quality(md, settings.KB_CONTRIB_MIN_CHARS)
     if not ok_doc:

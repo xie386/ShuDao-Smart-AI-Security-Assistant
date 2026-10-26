@@ -300,6 +300,24 @@ class KnowledgeContribService:
         db.commit()
         db.refresh(contrib)
 
+        # Agent 贡献：把审核结论回写到案例库（否则案例永远是"待审核"，方法论学不到东西）
+        if getattr(contrib, "source_kind", "user") == "agent":
+            try:
+                from src.services import agent_docs
+
+                try:
+                    import json as _json
+
+                    urls = _json.loads(getattr(contrib, "origin_urls", "") or "[]")
+                except Exception:  # noqa: BLE001
+                    urls = []
+                agent_docs.update_case(
+                    contrib.id, contrib.status, data.note or "",
+                    url=(urls[0] if urls else ""), gap=contrib.title or "",
+                )
+            except Exception:  # noqa: BLE001 —— 案例回写失败不影响审核结果
+                logger.warning("案例库回写失败 contrib=%s", contrib.id, exc_info=True)
+
         # H08：通知上传者（进度可见）
         NotificationService.push(
             contrib.contributor_id,

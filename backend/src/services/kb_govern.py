@@ -82,6 +82,57 @@ def clean_text(text: str) -> str:
     return "\n".join(dedup)
 
 
+_REF_HEADING = re.compile(
+    r"^#{0,6}\s*(来源|参考来源|参考资料|参考文件|参考链接|依据来源|references?|sources?)\s*[:：]?\s*$",
+    re.IGNORECASE,
+)
+_URL = re.compile(r"(?:https?://|ftp://|www\.)\S+", re.IGNORECASE)
+_INLINE_CITE = re.compile(r"[\[（(]\s*(?:来源|出处|参考)[:：][^\]）)]{0,300}[\]）)]")
+
+
+def clean_for_index(text: str) -> str:
+    """入库前清洗：删掉一切链接与「来源/参考」节，只留知识正文。
+
+    保留原始文件不动（管理员审核时要能核对来源），只清**进向量库的文本**：
+    1. 去掉末尾「## 来源 / 参考资料 / References」整节（含其下条目）；
+    2. 去掉内联 `[来源: ...]`、`（出处：...）`；
+    3. 去掉裸 URL（http/https/ftp/www.）；
+    4. 清掉因此变空的项目符号行，压缩空白。
+    """
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    kept: list[str] = []
+    for ln in lines:
+        if _REF_HEADING.match(ln.strip()):
+            break  # 来源节之后全部丢弃
+        kept.append(ln)
+    body = "\n".join(kept)
+
+    body = _INLINE_CITE.sub("", body)
+    body = _URL.sub("", body)
+
+    out: list[str] = []
+    for raw in body.splitlines():
+        ln = re.sub(r"\s+", " ", raw).strip()
+        if not ln:
+            out.append("")
+            continue
+        if re.fullmatch(r"[-*•·]\s*", ln):          # 只剩项目符号
+            continue
+        if re.fullmatch(r"\d+[.、)]\s*", ln):        # 只剩编号
+            continue
+        ln = re.sub(r"\s+([，。；、])", r"\1", ln)     # 删除链接后留下的空格
+        ln = re.sub(r"([，、；])\s*([，、；。])", r"\2", ln)  # 连续标点
+        ln = re.sub(r"^[，、；。]+", "", ln)
+        out.append(ln)
+
+    cleaned = "\n".join(out)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
+
+
 def quality_check(text: str, min_chars: int | None = None) -> dict:
     """判定标准 §5 在线校验。返回 {ok, reasons, chars, short, repeat_ratio, garble_ratio}。
 
