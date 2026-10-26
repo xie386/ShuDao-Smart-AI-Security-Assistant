@@ -11,6 +11,10 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000, description="用户问题")
     conversation_id: Optional[int] = Field(default=None, description="会话 ID（空=新建）")
     title: Optional[str] = Field(default=None, max_length=128, description="新建会话标题（默认取问题前 20 字）")
+    high_precision: bool = Field(
+        default=False,
+        description="高精度检索（v2.0 大点 01）：True 时本轮重排走 fp32（更准但更慢）",
+    )
 
 
 class ConversationOut(BaseModel):

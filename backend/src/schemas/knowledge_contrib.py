@@ -24,6 +24,13 @@ class KnowledgeContribOut(BaseModel):
     review_note: Optional[str] = None
     review_by: Optional[int] = None
     chunk_count: Optional[int] = None
+    # ---- v2.0 大点 04 ----
+    source_kind: str = "user"          # user / agent
+    source_agent_id: Optional[int] = None
+    origin_urls: Optional[str] = None  # JSON 数组（Agent 来源）
+    origin_filename: Optional[str] = None
+    md_path: Optional[str] = None      # knowledge_src/{type}/{file}.md
+    convert_by: Optional[str] = None   # mineru/builtin/fallback/direct
     created_at: datetime
     updated_at: datetime
 

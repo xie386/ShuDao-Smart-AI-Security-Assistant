@@ -1,6 +1,6 @@
 """知识贡献 · 审核预筛子智能体（辅助管理员判定是否属于施工安全领域）。
 
-依据：backend/docs/施工安全领域文件鉴别判定标准.md（浓缩进 prompts.yml 的
+依据：backend/docs/v1.0/施工安全领域文件鉴别判定标准.md（浓缩进 prompts.yml 的
 knowledge_review 模板；原文查看入口由前端提供，AI 辅助 + 硬性规章双保障）。
 
 设计（对齐考试工坊 exam_agent 范式）：

@@ -15,7 +15,11 @@
     context, sources = hybrid_retrieve("高处作业有哪些要求")
 """
 import logging
+import pickle
+import threading
+import time
 from functools import lru_cache
+from pathlib import Path
 
 from src.core.config import settings
 
@@ -38,17 +42,56 @@ def _tokenize(text: str) -> list[str]:
 
 # ---- 索引缓存 ----
 
+def _corpus_cache_file() -> Path:
+    """BM25 语料磁盘缓存路径（与 chroma 持久化目录同级，.gitignore 已排除 chroma/ 与 *.pkl）。"""
+    return Path(settings.CHROMA_DIR).resolve().parent / "bm25_corpus.pkl"
+
+
 @lru_cache
 def _load_corpus():
-    """全量文档 + 元数据缓存（BM25 语料，与 Chroma 集合同源）。"""
+    """BM25 语料 = 全部子块文本 + id（与 Chroma 集合同源）。
+
+    v2.0 大点 01 冷启动优化（实测）：
+    - 旧实现 `col.get(include=["documents","metadatas"])` 会把每个子块的 **parent_text**
+      （p50 ≈ 117K 字符）一起拉进内存，17,797 块 ≈ 2.2GB，耗时 **159.8s**，还写出 2.2GB pickle；
+    - 现在只读 documents（子块文本，MB 级），metadata（含 parent_text）**按需**取：
+      稀疏检索只回 30 条命中，用 id 回查这 30 条的 metadata 即可；
+    - 语料仍落磁盘缓存（ids+corpus，块数校验），`upsert_chunks` 会主动失效。
+    """
     from src.ai.knowledge import get_collection  # lazy
 
     col = get_collection()
-    data = col.get(include=["documents", "metadatas"])
+    try:
+        count = int(col.count())
+    except Exception:  # noqa: BLE001 —— count 失败就当缓存不可信
+        count = -1
+
+    cache = _corpus_cache_file()
+    if count >= 0 and cache.exists():
+        try:
+            obj = pickle.loads(cache.read_bytes())
+            if obj.get("count") == count and obj.get("corpus"):
+                logger.info(
+                    "BM25 语料命中磁盘缓存: %d 块（免去 Chroma 全量读取）", len(obj["corpus"])
+                )
+                return obj["ids"], obj["corpus"]
+            logger.info("BM25 语料缓存失效(%s != %s)，回源 Chroma", obj.get("count"), count)
+        except Exception as exc:  # noqa: BLE001 —— 缓存坏了就当没有
+            logger.warning("BM25 语料缓存读取失败，回源 Chroma: %s", exc)
+
+    t0 = time.perf_counter()
+    data = col.get(include=["documents"])
+    ids = list(data["ids"])
     corpus = [d or "" for d in data["documents"]]
-    metas = data["metadatas"] or [{}] * len(corpus)
-    logger.info("BM25 语料已加载: %d 块", len(corpus))
-    return corpus, metas
+    logger.info("BM25 语料已从 Chroma 加载: %d 块 %.1fs", len(corpus), time.perf_counter() - t0)
+
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(pickle.dumps({"count": count, "ids": ids, "corpus": corpus}, protocol=4))
+        logger.info("BM25 语料已写入磁盘缓存: %s", cache)
+    except Exception as exc:  # noqa: BLE001 —— 写缓存失败不影响检索
+        logger.warning("BM25 语料缓存写入失败: %s", exc)
+    return ids, corpus
 
 
 @lru_cache
@@ -56,8 +99,107 @@ def _get_bm25():
     """lazy 构建 BM25Okapi 索引（进程内缓存，避免每次检索重建）。"""
     from rank_bm25 import BM25Okapi  # lazy
 
-    corpus, _ = _load_corpus()
-    return BM25Okapi([_tokenize(c) for c in corpus])
+    _ids, corpus = _load_corpus()
+    t0 = time.perf_counter()
+    index = BM25Okapi([_tokenize(c) for c in corpus])
+    logger.info("BM25 索引构建完成 %d 块 %.1fs", len(corpus), time.perf_counter() - t0)
+    return index
+
+
+def _hydrate_metadata(hits: list[dict]) -> list[dict]:
+    """按 id 回查命中块的 metadata（含 parent_text），一次批量取。"""
+    missing = [h for h in hits if not h.get("metadata") and h.get("id")]
+    if not missing:
+        return hits
+    try:
+        from src.ai.knowledge import get_collection  # lazy
+
+        data = get_collection().get(ids=[h["id"] for h in missing], include=["metadatas"])
+        by_id = dict(zip(data["ids"], data["metadatas"] or []))
+        for h in missing:
+            h["metadata"] = by_id.get(h["id"]) or {}
+    except Exception as exc:  # noqa: BLE001 —— 取不到就退回纯文本命中
+        logger.warning("稀疏命中 metadata 回查失败: %s", exc)
+    return hits
+
+
+def invalidate_corpus_cache() -> None:
+    """知识库写入后调用：清进程内索引 + 删磁盘缓存，下次检索自动重建。"""
+    _load_corpus.cache_clear()
+    _get_bm25.cache_clear()
+    try:
+        _corpus_cache_file().unlink(missing_ok=True)
+    except OSError as exc:  # noqa: BLE001
+        logger.warning("删除 BM25 语料缓存失败: %s", exc)
+
+
+_warm_lock = threading.Lock()
+_warm_state: dict = {}
+_warm_started = threading.Event()   # 预热已开始（检索端据此决定要不要等）
+_warm_event = threading.Event()     # 预热已结束（成功或失败都置位）
+
+
+def _await_warmup(timeout: float = 180.0) -> None:
+    """检索若在预热期间到达，就等预热结束再跑。
+
+    为什么不让它自己去算：lru_cache 不防并发，两个线程会各建一遍 BM25/各加载一份模型，
+    实测「预热中提问」把首问检索从 13s 拖到 94s。等一次只多等预热剩余时间。
+    """
+    if _warm_event.is_set() or not _warm_started.is_set():
+        return
+    logger.info("检索请求等待预热完成…")
+    if not _warm_event.wait(timeout):
+        logger.warning("等待预热超时(%.0fs)，直接检索", timeout)
+
+
+def warmup() -> dict:
+    """预热检索链路（启动后台线程调用）：语料 → BM25 → embedding → 重排模型。
+
+    目的：把「首问 175s 冷启动」挪到服务启动阶段，用户的第一问就按热态算。
+    任何一步失败都只记日志，不影响服务可用性（后续检索会自行 lazy 加载）。
+    """
+    if _warm_state.get("done"):
+        return _warm_state
+    with _warm_lock:
+        if _warm_state.get("done"):
+            return _warm_state
+        _warm_started.set()
+        state: dict = {}
+        t_all = time.perf_counter()
+        try:
+            t = time.perf_counter()
+            _load_corpus()
+            state["corpus_s"] = round(time.perf_counter() - t, 1)
+
+            t = time.perf_counter()
+            _get_bm25()
+            state["bm25_s"] = round(time.perf_counter() - t, 1)
+
+            try:
+                t = time.perf_counter()
+                from src.ai.embeddings import get_embedding_model  # lazy
+
+                get_embedding_model().embed_query("预热")
+                state["embedding_s"] = round(time.perf_counter() - t, 1)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("预热 embedding 失败: %s", exc)
+
+            try:
+                t = time.perf_counter()
+                from src.ai.reranker import reranker  # lazy
+
+                reranker.model
+                state["reranker_s"] = round(time.perf_counter() - t, 1)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("预热重排模型失败: %s", exc)
+
+            state["total_s"] = round(time.perf_counter() - t_all, 1)
+            state["done"] = True
+            _warm_state.update(state)
+            logger.info("检索链路预热完成: %s", state)
+        finally:
+            _warm_event.set()   # 即使失败也放行检索
+        return _warm_state
 
 
 # ---- 两路召回 ----
@@ -80,14 +222,15 @@ def _dense_search(question: str) -> list[dict]:
 def _sparse_search(question: str) -> list[dict]:
     """稀疏检索：BM25 关键词 Top-K（条款号/专业术语精准命中）。"""
     bm25 = _get_bm25()
-    corpus, metas = _load_corpus()
+    ids, corpus = _load_corpus()
     scores = bm25.get_scores(_tokenize(question))
     ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:SPARSE_K]
-    return [
-        {"text": corpus[i], "metadata": metas[i] or {}, "bm25_score": float(s)}
+    hits = [
+        {"text": corpus[i], "id": ids[i], "metadata": {}, "bm25_score": float(s)}
         for i, s in ranked
         if s > 0
     ]
+    return _hydrate_metadata(hits)  # 只回查这 ≤30 条的 metadata（含 parent_text）
 
 
 def _rrf_fuse(dense: list[dict], sparse: list[dict]) -> list[dict]:
@@ -108,6 +251,7 @@ def _rrf_fuse(dense: list[dict], sparse: list[dict]) -> list[dict]:
 
 def _retrieve_candidates(question: str) -> list[dict]:
     """单查询的两路召回 + RRF 融合（不重排，供多路合并）。"""
+    _await_warmup()  # 预热进行中就先等它，避免重复建索引/重复加载模型
     dense = _dense_search(question)
     if not dense:
         return []
@@ -231,7 +375,8 @@ def _extract_query_topic(question: str) -> list[str]:
 
 
 def _multi_query_retrieve(queries: list[str], k: int,
-                          topics: list[str] | None = None) -> tuple[list[dict], list[int]]:
+                          topics: list[str] | None = None
+                          ) -> tuple[list[dict], list[int], dict[int, float]]:
     """v3.0：多子查询独立检索 + 文档级聚合保底（v2.0 §1.1 通用化）。
 
     每个子查询独立走 稠密+稀疏→RRF→重排，得到各自候选；再按 `doc` 聚合，
@@ -239,6 +384,10 @@ def _multi_query_retrieve(queries: list[str], k: int,
 
     queries: 子查询列表（LLM 改写 或 零 LLM 关键词切分）；失败退化单查询。
     topics: v4.0 query 主题标签，用于主题一致性加权（空则跳过）。
+
+    返回 (all_candidates, mmr_idx, score_map)：
+    - score_map: 全局候选索引 → 该候选的最高重排分（v2.0 大点 01 新增，
+      用于把命中块连分数一起写进会话缓存，命中时可直接复用而不必重排）。
     """
     per_query: list[list[tuple[int, float]]] = []  # 每子查询的重排结果（相对各自候选池）
     all_candidates: list[dict] = []
@@ -260,7 +409,7 @@ def _multi_query_retrieve(queries: list[str], k: int,
         per_query.append(pairs)
 
     if not all_candidates:
-        return [], []
+        return [], [], {}
 
     # 文档级聚合：把每个子查询 rerank Top-1 强制纳入，保多跳下限。
     # per_query 的 idx 相对各子查询自身 uniq，需映射到 all_candidates 全局偏移。
@@ -273,6 +422,12 @@ def _multi_query_retrieve(queries: list[str], k: int,
             if rank == 0:  # 该子查询 rerank 第一
                 forced_global.add(offset + local_idx)
         offset += len(pairs)
+
+    # 全局候选 → 最高重排分（供会话缓存记录，命中时无需重排）
+    score_map: dict[int, float] = {}
+    for gi, score in global_pairs:
+        if score > score_map.get(gi, float("-inf")):
+            score_map[gi] = float(score)
 
     # v4.0 主题一致性加权：匹配 query 主题的候选 rerank 分乘 1+α（只加权不惩罚，
     # 召回不降；匹配主题的期望文档排名提升 → 占更多席 → 精确率回升）
@@ -292,7 +447,7 @@ def _multi_query_retrieve(queries: list[str], k: int,
     for gi in forced_global:
         if gi not in mmr_idx and len(mmr_idx) < k:
             mmr_idx.append(gi)
-    return all_candidates, mmr_idx
+    return all_candidates, mmr_idx, score_map
 
 
 def reranker_topk(query: str, docs: list[str], top_k: int) -> list[tuple[int, float]]:
@@ -370,7 +525,7 @@ def hybrid_retrieve(
         queries = _keyword_split(question)
     # v4.0 主题识别：对原问题做主题词典匹配，供检索侧主题加权（治 plans 同质化）
     q_topics = _extract_query_topic(question)
-    candidates, mmr_idx = _multi_query_retrieve(queries, k, topics=q_topics)
+    candidates, mmr_idx, _scores = _multi_query_retrieve(queries, k, topics=q_topics)
     if not candidates:
         logger.warning("检索无候选（知识库为空？）")
         return "", []
@@ -402,3 +557,92 @@ def hybrid_retrieve(
             }
         )
     return "\n\n".join(context_parts), sources
+
+
+# ---- v2.0 大点 01：子块级检索 + 预算裁剪（供会话缓存与增量补检复用）----
+
+def retrieve_queries(
+    queries: list[str], k: int | None = None, topics: list[str] | None = None
+) -> list[dict]:
+    """多子查询检索，返回**子块级**命中（带重排分），不直接拼父块。
+
+    与 hybrid_retrieve 的区别：那边直接产出「父块拼好的 context」；这里返回结构化子块，
+    供 chat 编排层写会话缓存、做去重合并、以及按预算装配上下文。
+
+    返回：[{text, metadata, rerank_score}]，顺序 = 文档配额精选后的顺序。
+    """
+    if not queries:
+        return []
+    kk = k or settings.RAG_TOP_K_RERANK
+    candidates, mmr_idx, score_map = _multi_query_retrieve(queries, kk, topics=topics)
+    if not candidates:
+        return []
+    out: list[dict] = []
+    for gi in mmr_idx:
+        hit = dict(candidates[gi])
+        hit["rerank_score"] = score_map.get(gi)
+        out.append(hit)
+    return out
+
+
+def _cropped_block_text(hit: dict, budget: int) -> str:
+    """单块文本：优先「父块中围绕命中子块的窗口」，找不到则退回子块原文。
+
+    为什么不用父块全文：父块 p50 = 117,312 字符（实测），4 块就是 20 万字，
+    生成阶段光读上下文就要几十秒。这里按预算取窗口，既保留语境又不顶爆。
+    """
+    child = (hit.get("text") or "").strip()
+    parent = ((hit.get("metadata") or {}).get("parent_text") or "").strip()
+    if not parent:
+        return child[:budget]
+    if child and child in parent:
+        i = parent.find(child)
+        half = max(0, (budget - len(child)) // 2)
+        start = max(0, i - half)
+        seg = parent[start : start + budget]
+        prefix = "…" if start > 0 else ""
+        suffix = "…" if start + budget < len(parent) else ""
+        return f"{prefix}{seg}{suffix}"
+    return parent[:budget]
+
+
+def format_context(
+    blocks: list[dict], budget_chars: int | None = None
+) -> tuple[str, list[dict]]:
+    """把子块命中装配成喂模型的 context（带 [来源: 文档#章节] 标注）。
+
+    budget_chars：总字符预算（默认 settings.RAG_CONTEXT_BUDGET_CHARS）；
+                  各块均分，单块至少 300 字符，避免块多时被压成一句话。
+    返回 (context, sources)，sources 供 A06 引用落库，结构与原 hybrid_retrieve 一致。
+    """
+    if not blocks:
+        return "", []
+    budget = budget_chars or settings.RAG_CONTEXT_BUDGET_CHARS
+    per_block = max(300, budget // max(1, len(blocks)))
+
+    parts: list[str] = []
+    sources: list[dict] = []
+    seen_parent: set[str] = set()
+    for hit in blocks:
+        meta = hit.get("metadata") or {}
+        parent_key = (meta.get("parent_text") or hit.get("text") or "")[:200]
+        if not parent_key or parent_key in seen_parent:
+            continue  # 同一父块的多个子块只保留一次
+        seen_parent.add(parent_key)
+
+        label = meta.get("doc", "未知文档")
+        if meta.get("chapter"):
+            label += f"#{meta['chapter']}"
+        elif meta.get("article_no"):
+            label += f"#{meta['article_no']}"
+        parts.append(f"[来源: {label}]\n{_cropped_block_text(hit, per_block)}")
+        sources.append(
+            {
+                "doc": meta.get("doc", ""),
+                "doc_type": meta.get("doc_type", ""),
+                "chapter": meta.get("chapter", ""),
+                "article_no": meta.get("article_no", ""),
+                "source": meta.get("source", ""),
+            }
+        )
+    return "\n\n".join(parts), sources

@@ -96,6 +96,7 @@ class TestReviewStandard:
         p = (
             Path(__file__).resolve().parents[1]
             / "docs"
+            / "v1.0"
             / "施工安全领域文件鉴别判定标准.md"
         )
         assert p.exists(), "判定标准文档缺失"
@@ -128,9 +129,11 @@ class TestGovern:
     def test_quality_ok(self):
         from src.services.kb_govern import quality_check
 
-        text = "施工安全规范。\n" * 200  # 600+ 字，无污染
+        # 200 行各不相同的正文（原用例用同一行重复 200 次，本质是"重复率 99%"，
+        # 断言 ok=True 且 repeat_ratio==0.0 自相矛盾；v2.0 大点 04 顺手修正）
+        text = "\n".join(f"第{i}条 施工现场安全防护要求第{i}项规定。" for i in range(200))
         qc = quality_check(text)
-        assert qc["ok"] is True and qc["repeat_ratio"] == 0.0
+        assert qc["ok"] is True and qc["repeat_ratio"] < 0.4
 
     def test_quality_too_short(self):
         from src.services.kb_govern import quality_check

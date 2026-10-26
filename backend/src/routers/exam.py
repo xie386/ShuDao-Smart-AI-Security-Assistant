@@ -5,8 +5,8 @@
 - POST /api/exam/papers                     创建并生成试卷（同步 30-60s，前端 loading）
 - GET  /api/exam/papers                     我的试卷历史（分页）
 - GET  /api/exam/papers/{paper_id}          试卷详情（含内容 JSON）
-- POST /api/exam/papers/{paper_id}/export   按格式导出（md/docx/pdf）→ 返回下载 URL
-- GET  /exam-files/{filename}               静态托管导出文件（main.py 挂载）
+- POST /api/exam/papers/{paper_id}/export   按格式导出（md/docx/pdf）→ 返回带鉴权的下载 URL
+- GET  /api/exam/papers/{paper_id}/download 下载已导出文件（v2.0 大点 00：仅本人，替代静态 /exam-files）
 
 注意：生成接口为同步阻塞（LLM 全卷约 30-60s），任务表 status 记录 生成中/已完成/失败；
 文档模式（input_type=document）由前端读取 md/txt 文本后走同一 JSON 端点。
@@ -14,6 +14,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from src.core.db import get_db
@@ -74,3 +75,15 @@ def export_paper(
     user: dict = Depends(get_current_user),
 ):
     return exam_service.export_paper(db, user["id"], paper_id, body.format)
+
+
+@router.get("/papers/{paper_id}/download", summary="下载已导出试卷（仅本人）")
+def download_paper(
+    paper_id: str,
+    format: str = Query(default="", description="md/docx/pdf，缺省用试卷当前导出格式"),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """v2.0 大点 00：替代原静态目录 /exam-files，非本人 404、无 token 401。"""
+    path, download_name = exam_service.download_path(db, user["id"], paper_id, format)
+    return FileResponse(path, filename=download_name, media_type="application/octet-stream")

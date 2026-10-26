@@ -12,7 +12,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from src.core.db import get_db
@@ -24,6 +25,10 @@ from src.schemas.knowledge_contrib import (
     ReviewRequest,
     ReviewStandardOut,
 )
+from src.core.config import settings
+from pydantic import BaseModel, Field
+
+from src.services import agent_contrib_service
 from src.services.knowledge_contrib_service import KnowledgeContribService
 
 logger = logging.getLogger(__name__)
@@ -32,7 +37,7 @@ router = APIRouter(prefix="/api/knowledge-contrib", tags=["知识贡献"])
 
 # 判定标准文档（硬性规章依据，AI 辅助之外的第二重保障）
 _REVIEW_STANDARD = (
-    Path(__file__).resolve().parents[2] / "docs" / "施工安全领域文件鉴别判定标准.md"
+    Path(__file__).resolve().parents[2] / "docs" / "v1.0" / "施工安全领域文件鉴别判定标准.md"
 )
 
 
@@ -98,6 +103,86 @@ def contrib_timeline(
 ):
     KnowledgeContribService.detail(db, contrib_id, user["id"], user["role"])
     return KnowledgeContribService.timeline(db, contrib_id)
+
+
+class AgentSubmitIn(BaseModel):
+    """Agent 提交（JSON，不是 multipart）：md 正文 + 来源 URL。"""
+
+    title: str = Field(..., min_length=2, max_length=128)
+    doc_type: str = Field("laws", description="laws/procedures/plans/cases")
+    intro: str = Field("", max_length=500)
+    md: str = Field(..., min_length=200, description="Markdown 正文（首行 # 标题）")
+    origin_urls: list[str] = Field(default_factory=list, max_length=20)
+    origin_filename: Optional[str] = None
+
+
+@router.post("/agent", response_model=KnowledgeContribOut, status_code=201,
+             summary="K01-AG Agent 提交贡献（X-Agent-Key，进人工审核）")
+def submit_by_agent(
+    data: AgentSubmitIn,
+    x_agent_key: Optional[str] = Header(default=None, alias="X-Agent-Key"),
+    db: Session = Depends(get_db),
+):
+    agent = agent_contrib_service.authenticate(db, x_agent_key or "")
+    return agent_contrib_service.submit_agent(
+        db,
+        title=data.title,
+        doc_type=data.doc_type,
+        intro=data.intro,
+        md=data.md,
+        agent=agent,
+        origin_urls=data.origin_urls,
+        origin_filename=data.origin_filename,
+    )
+
+
+@router.get("/agent-runs", summary="Agent 采集运行记录（仅 admin）")
+def agent_runs(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    from sqlalchemy import select as _select
+
+    from src.models.agent import AgentRun
+
+    rows = db.scalars(_select(AgentRun).order_by(AgentRun.id.desc()).limit(limit)).all()
+    return {
+        "total": len(rows),
+        "items": [
+            {
+                "id": r.id,
+                "conversation_id": r.conversation_id,
+                "gap_question": r.gap_question,
+                "status": r.status,
+                "contrib_id": r.contrib_id,
+                "methodology_version": r.methodology_version,
+                "urls": r.urls,
+                "created_at": r.created_at.isoformat(timespec="seconds") if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/{contrib_id}/file", summary="K03+ 下载原始上传文件（本人或 admin）")
+def contrib_file(
+    contrib_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """管理员审核时要能看原件（v2.0 大点 04 · 裁定 12）。"""
+    contrib = KnowledgeContribService.detail(db, contrib_id, user["id"], user["role"])
+    if not contrib.file_path:
+        raise HTTPException(status_code=404, detail="该记录没有原始文件")
+    path = Path(settings.UPLOAD_DIR) / contrib.file_path
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="原始文件已丢失")
+    return FileResponse(
+        path,
+        filename=contrib.origin_filename or path.name,
+        media_type="application/octet-stream",
+    )
 
 
 @router.post("/{contrib_id}/review", response_model=KnowledgeContribOut, summary="K06 审核（仅 admin，通过则入向量库）")

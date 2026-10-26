@@ -7,6 +7,7 @@
 """
 import logging
 import uuid
+from pathlib import Path
 from typing import Optional
 
 from fastapi import HTTPException
@@ -14,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.ai.exam_agent import exam_agent
+from src.core.config import settings
 from src.models.exam_paper import ExamPaper
 from src.schemas.exam import ExamPaperCreate
 from src.services import exam_export
@@ -108,7 +110,46 @@ class ExamService:
         paper.export_format = fmt
         paper.file_path = rel
         db.commit()
-        return {"paper_id": paper.paper_id, "format": fmt, "file_url": f"/exam-files/{paper.paper_id}.{fmt}"}
+        # v2.0 大点 00：导出产物不再走静态目录，唯一下载出口是带鉴权的下载端点
+        return {
+            "paper_id": paper.paper_id,
+            "format": fmt,
+            "file_url": f"/api/exam/papers/{paper.paper_id}/download?format={fmt}",
+        }
+
+    # ---- 下载（仅本人） ----
+
+    def download_path(
+        self, db: Session, user_id: int, paper_id: str, fmt: str = ""
+    ) -> tuple[Path, str]:
+        """返回 (导出文件绝对路径, 下载文件名)。仅试卷创建者可取。
+
+        路径解析两段兼容（v2.0 大点 00，历史文件不迁移）：
+        1. 新记录：`file_path = "exam_files/paper_xxx.md"`（相对 backend/）
+        2. 历史记录：`file_path = "exam/paper_xxx.md"`（旧导出目录，仍在 uploads/exam/ 下）
+        无论命中哪一类，最终都必须落在 exam_files/ 或 uploads/exam/ 之内。
+        """
+        paper = self.get_paper(db, user_id, paper_id)  # 不存在/非本人 → 404
+        fmt = (fmt or paper.export_format or "md").lower()
+        if fmt not in ("md", "docx", "pdf"):
+            raise HTTPException(status_code=400, detail=f"不支持的格式: {fmt}（可选 md/docx/pdf）")
+
+        roots = [
+            exam_export.EXAM_FILES_DIR.resolve(),
+            (Path(settings.UPLOAD_DIR) / "exam").resolve(),
+        ]
+        candidates: list[Path] = []
+        if paper.file_path:
+            candidates.append(Path(paper.file_path))
+        candidates.append(exam_export.EXAM_FILES_DIR / f"{paper.paper_id}.{fmt}")
+        candidates.append(Path(settings.UPLOAD_DIR) / "exam" / f"{paper.paper_id}.{fmt}")
+
+        target = next((c.resolve() for c in candidates if c.resolve().is_file()), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="导出文件不存在，请先导出")
+        if not any(root in target.parents for root in roots):
+            raise HTTPException(status_code=404, detail="导出路径非法")
+        return target, f"{paper.title}.{fmt}"
 
 
 # 模块级单例（对齐 PptService 用法）

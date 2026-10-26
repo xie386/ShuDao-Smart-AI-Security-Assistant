@@ -1,32 +1,45 @@
-"""PPT 本地生成兜底方案（D4：百度 API 免费额度用尽/故障时降级使用）。
+"""PPT 兜底渲染器（v2.0 大点 02 降级为"快速模式"，不再是默认链路）。
 
-提炼自 scripts/gen_ppt.py（D3 已验证的 A+B 混合方案）：
-- A 方案：python-pptx 商务模板（深蓝+金）渲染 封面/目录/内容/结尾；
-- B 方案：HTML/CSS 封面 → playwright 截图嵌入（本机 Chrome 可用）。
-此处提供纯 A 方案（离线零依赖，最稳），B 方案封面可选启用。
+什么时候用：
+- `POST /api/ppt/{id}/generate`（快速模式：无 Agent、无配图、无自检，秒级出片）；
+- OfficeCLI 不可用（`PPT_OFFICECLI_PATH` 配错/缺失）时的最后兜底（验证项 7）。
 
-对外接口（供 ppt_service 调用）：
-    generate_local_ppt(outline: dict, topic: str, out_path: Path) -> int  # 返回页数
+与 Agent 链路的关系（裁定 8）：**同一任务只会走其中一条**。Agent 链路的唯一写者是
+OfficeCLI；本模块是 python-pptx 渲染器，两者不并发写同一个文件。
+
+修掉的老问题（裁定 11）：
+- 要点不再 `points[:5]` 静默截断：>5 条自动双栏，>10 条才截断（并 warning）；
+- 目录页按容量分两栏，章节多时不再溢出页外；
+- 版面尺寸统一 16:9，内容过多时按条数降字号（20/18/16）。
+
+对外接口（保持不变，供 ppt_service 调用）：
+    generate_local_ppt(outline, topic, out_path, template_path=None) -> int  # 返回页数
 """
 import logging
-import re
 from pathlib import Path
 
 from pptx import Presentation  # noqa: E402
 from pptx.dml.color import RGBColor  # noqa: E402
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR  # noqa: E402
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN  # noqa: E402
 from pptx.util import Inches, Pt  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-NAVY = RGBColor(0x1F, 0x38, 0x64)
+NAVY = RGBColor(0x0E, 0x2A, 0x47)
+NAVY_LIGHT = RGBColor(0x1F, 0x38, 0x64)
 GOLD = RGBColor(0xC9, 0xA2, 0x27)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 GRAY = RGBColor(0x59, 0x59, 0x59)
 FONT = "微软雅黑"
 SLIDE_W, SLIDE_H = Inches(13.333), Inches(7.5)
 
+MAX_BULLETS = 10     # 单页要点上限（超过才截断）
+TOC_PER_COLUMN = 5   # 目录每栏最多 5 个章节
 
+
+# --------------------------------------------------------------------------- #
+# 基础绘制
+# --------------------------------------------------------------------------- #
 def _add_bg(slide, color):
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = color
@@ -43,7 +56,7 @@ def _add_rect(slide, x, y, w, h, color):
     return shape
 
 
-def _add_text(slide, x, y, w, h, text, size=18, color=NAVY, bold=False,
+def _add_text(slide, x, y, w, h, text, size=18, color=NAVY_LIGHT, bold=False,
               align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
     box = slide.shapes.add_textbox(x, y, w, h)
     tf = box.text_frame
@@ -60,109 +73,161 @@ def _add_text(slide, x, y, w, h, text, size=18, color=NAVY, bold=False,
     return box
 
 
-def _header(slide, title):
-    _add_rect(slide, 0, 0, SLIDE_W, Inches(1.1), NAVY)
-    _add_rect(slide, 0, Inches(1.1), SLIDE_W, Inches(0.06), GOLD)
-    _add_text(slide, Inches(0.7), Inches(0.18), Inches(11.5), Inches(0.8),
-              title, size=28, color=WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
-
-
-def _render_cover(prs, title, subtitle):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_bg(slide, NAVY)
-    _add_rect(slide, 0, Inches(6.9), SLIDE_W, Inches(0.6), GOLD)
-    _add_text(slide, Inches(1.2), Inches(2.2), Inches(11), Inches(1.4),
-              title, size=48, color=WHITE, bold=True)
-    _add_text(slide, Inches(1.2), Inches(3.6), Inches(11), Inches(0.6),
-              f"—— {subtitle} ——", size=22, color=GOLD)
-    _add_text(slide, Inches(1.2), Inches(6.2), Inches(8), Inches(0.5),
-              "蜀道集团安全管理部 ｜ 安全培训课件", size=16, color=WHITE)
-
-
-def _render_toc(prs, sections):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_bg(slide, WHITE)
-    _header(slide, "目录 CONTENTS")
-    y = 1.8
-    for i, sec in enumerate(sections):
-        _add_rect(slide, Inches(1.5), Inches(y), Inches(0.85), Inches(0.85),
-                  NAVY if i % 2 == 0 else GOLD)
-        _add_text(slide, Inches(1.5), Inches(y), Inches(0.85), Inches(0.85),
-                  f"{i + 1:02d}", size=24, color=WHITE, bold=True,
-                  align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-        _add_text(slide, Inches(2.6), Inches(y), Inches(9.5), Inches(0.85),
-                  sec.get("name", f"章节 {i + 1}"), size=22, color=NAVY,
-                  anchor=MSO_ANCHOR.MIDDLE)
-        y += 1.05
-
-
-def _render_content(prs, idx, sec):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_bg(slide, WHITE)
-    _header(slide, sec.get("name", f"章节 {idx}"))
-    _add_rect(slide, Inches(0.7), Inches(1.7), Inches(0.08), Inches(4.4), GOLD)
-    body = _add_text(slide, Inches(1.1), Inches(1.7), Inches(11.2), Inches(5.0),
-                     "", size=20)
-    tf = body.text_frame
-    points = sec.get("points") or []
-    for i, pt in enumerate(points[:5]):  # 每页要点 ≤5（任务书 2.8）
+def _add_bullets(slide, x, y, w, h, bullets, size):
+    box = slide.shapes.add_textbox(x, y, w, h)
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = MSO_ANCHOR.TOP
+    for i, pt in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.space_after = Pt(16)
+        p.space_after = Pt(max(6, size // 2))
         run = p.add_run()
         run.text = f"▸ {pt}"
         run.font.name = FONT
-        run.font.size = Pt(20)
-        run.font.color.rgb = NAVY if i % 2 == 0 else GRAY
-    _add_text(slide, Inches(12.2), Inches(7.0), Inches(1.0), Inches(0.4),
-              str(idx + 3), size=14, color=GRAY, align=PP_ALIGN.RIGHT)
+        run.font.size = Pt(size)
+        run.font.color.rgb = NAVY_LIGHT
+    return box
+
+
+def _header(slide, title):
+    _add_rect(slide, 0, 0, SLIDE_W, Inches(1.0), NAVY)
+    _add_rect(slide, 0, Inches(1.0), SLIDE_W, Inches(0.06), GOLD)
+    _add_text(slide, Inches(0.6), Inches(0.16), Inches(11.6), Inches(0.7),
+              title[:40], size=26, color=WHITE, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+
+
+def _page_no(slide, num):
+    _add_text(slide, Inches(12.0), Inches(7.0), Inches(0.9), Inches(0.35),
+              str(num), size=12, color=GRAY, align=PP_ALIGN.RIGHT)
+
+
+# --------------------------------------------------------------------------- #
+# 各类页面
+# --------------------------------------------------------------------------- #
+def _render_cover(prs, title, subtitle):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _add_bg(slide, NAVY)
+    _add_rect(slide, 0, Inches(6.95), SLIDE_W, Inches(0.55), GOLD)
+    _add_rect(slide, Inches(0.9), Inches(2.05), Inches(0.09), Inches(1.6), GOLD)
+    _add_text(slide, Inches(1.15), Inches(2.0), Inches(11), Inches(1.5),
+              title[:30], size=44, color=WHITE, bold=True)
+    _add_text(slide, Inches(1.15), Inches(3.65), Inches(11), Inches(0.6),
+              f"—— {subtitle} ——", size=20, color=GOLD)
+    _add_text(slide, Inches(1.15), Inches(6.25), Inches(8.5), Inches(0.45),
+              "蜀道集团安全管理部 ｜ 安全培训课件", size=14, color=WHITE)
+
+
+def _render_toc(prs, sections, num):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _add_bg(slide, WHITE)
+    _header(slide, "目 录  CONTENTS")
+    for i, sec in enumerate(sections[: TOC_PER_COLUMN * 2]):
+        col, row = divmod(i, TOC_PER_COLUMN)
+        x = 1.2 + col * 5.9
+        y = 1.55 + row * 1.02
+        _add_rect(slide, Inches(x), Inches(y), Inches(0.72), Inches(0.72),
+                  NAVY if i % 2 == 0 else GOLD)
+        _add_text(slide, Inches(x), Inches(y), Inches(0.72), Inches(0.72),
+                  f"{i + 1:02d}", size=22, color=WHITE, bold=True,
+                  align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+        _add_text(slide, Inches(x + 0.95), Inches(y), Inches(4.3), Inches(0.72),
+                  str(sec.get("name") or f"章节 {i + 1}")[:22], size=20,
+                  color=NAVY, anchor=MSO_ANCHOR.MIDDLE)
+    _page_no(slide, num)
+
+
+def _render_section(prs, name, idx, num):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _add_bg(slide, NAVY)
+    _add_rect(slide, 0, Inches(6.95), SLIDE_W, Inches(0.55), GOLD)
+    _add_text(slide, Inches(1.0), Inches(2.35), Inches(3.0), Inches(1.6),
+              f"{idx:02d}", size=96, color=GOLD, bold=True)
+    _add_text(slide, Inches(1.0), Inches(4.05), Inches(11), Inches(0.9),
+              str(name)[:26], size=36, color=WHITE, bold=True)
+
+
+def _render_content(prs, title, bullets, num):
+    """内容页：>5 条要点走双栏；按条数/长度选字号（不再静默截断）。"""
+    bullets = [str(b).strip() for b in bullets if str(b).strip()]
+    if len(bullets) > MAX_BULLETS:
+        logger.warning("单页要点 %d 条超过上限 %d，截断（标题：%s）", len(bullets), MAX_BULLETS, title)
+        bullets = bullets[:MAX_BULLETS]
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _add_bg(slide, WHITE)
+    _header(slide, title)
+    _add_rect(slide, Inches(0.62), Inches(1.45), Inches(0.08), Inches(5.2), GOLD)
+
+    longest = max((len(b) for b in bullets), default=0)
+    if len(bullets) > 5 or longest > 34:
+        size = 18 if len(bullets) <= 8 else 16
+        half = (len(bullets) + 1) // 2
+        _add_bullets(slide, Inches(0.95), Inches(1.55), Inches(5.6), Inches(5.2),
+                     bullets[:half], size)
+        _add_bullets(slide, Inches(6.85), Inches(1.55), Inches(5.6), Inches(5.2),
+                     bullets[half:], size)
+    else:
+        size = 20 if len(bullets) <= 4 else 18
+        _add_bullets(slide, Inches(0.95), Inches(1.55), Inches(11.3), Inches(5.2),
+                     bullets, size)
+    _page_no(slide, num)
 
 
 def _render_ending(prs, title):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _add_bg(slide, NAVY)
-    _add_text(slide, Inches(1.2), Inches(2.5), Inches(11), Inches(1.2),
-              "高高兴兴上班来，平平安安回家去", size=40, color=WHITE, bold=True,
+    _add_rect(slide, 0, Inches(6.95), SLIDE_W, Inches(0.55), GOLD)
+    _add_text(slide, Inches(1.0), Inches(2.5), Inches(11.3), Inches(1.1),
+              "高高兴兴上班来，平平安安回家去", size=38, color=WHITE, bold=True,
               align=PP_ALIGN.CENTER)
-    _add_text(slide, Inches(1.2), Inches(3.9), Inches(11), Inches(0.6),
+    _add_text(slide, Inches(1.0), Inches(3.85), Inches(11.3), Inches(0.6),
               f"《{title}》· 感谢聆听", size=20, color=GOLD, align=PP_ALIGN.CENTER)
-    _add_text(slide, Inches(1.2), Inches(6.4), Inches(11), Inches(0.5),
-              "蜀道集团安全管理部 ｜ 安全培训课件", size=14, color=WHITE,
+    _add_text(slide, Inches(1.0), Inches(6.3), Inches(11.3), Inches(0.45),
+              "蜀道集团安全管理部 ｜ 安全培训课件", size=13, color=WHITE,
               align=PP_ALIGN.CENTER)
 
 
+# --------------------------------------------------------------------------- #
+# 入口
+# --------------------------------------------------------------------------- #
 def generate_local_ppt(
     outline: dict, topic: str, out_path: Path, template_path: Path | None = None
 ) -> int:
-    """用 python-pptx 商务模板渲染大纲 → 保存 pptx，返回页数。
+    """渲染大纲 → pptx，返回页数。
 
     outline 结构：{"title", "subtitle", "sections": [{"name", "points"}]}
-    与百度方案的 outline JSON 结构一致（schemas/ppt.py 契约）。
+    （也被 Agent 的 outline.json 复用，但 Agent 走 OfficeCLI，不调用这里）
 
-    template_path（领导优化）：用户上传的自定义模板 .pptx 时，以其为基底
-    （保留模板首页/母版/样式），在末尾追加 封面/目录/内容/结尾 页。
+    template_path：用户上传的 .pptx。**保留其首页/母版/样式**，在末尾追加页面
+    （历史行为，快速模式沿用；Agent 链路不追加而是只借其主题色）。
     """
     title = (outline.get("title") or topic).strip()
     subtitle = (outline.get("subtitle") or "安全培训讲座课件").strip()
-    sections = outline.get("sections") or []
+    sections = [s for s in (outline.get("sections") or []) if s.get("name") or s.get("points")]
 
-    if template_path is not None and template_path.exists():
-        # 用户模板基底：保留既有页与母版，追加内容
+    if template_path is not None and Path(template_path).exists():
         prs = Presentation(str(template_path))
-        # 若模板本身没有 16:9 设置，统一为 16:9（避免默认 4:3 与内容页冲突）
         prs.slide_width, prs.slide_height = SLIDE_W, SLIDE_H
     else:
         prs = Presentation()
         prs.slide_width, prs.slide_height = SLIDE_W, SLIDE_H
 
     _render_cover(prs, title, subtitle)
-    _render_toc(prs, sections)
-    content_secs = [s for s in sections if "目录" not in (s.get("name") or "")]
-    for i, sec in enumerate(content_secs, start=1):
-        _render_content(prs, i, sec)
+    _render_toc(prs, sections, 2)
+    num = 3
+    for i, sec in enumerate(sections, start=1):
+        _render_section(prs, sec.get("name") or f"章节 {i}", i, num)
+        num += 1
+        points = sec.get("points") or []
+        if points:
+            _render_content(prs, sec.get("name") or f"章节 {i}", points, num)
+            num += 1
     _render_ending(prs, title)
 
+    out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(out_path)
     page_count = len(prs.slides._sldIdLst)
-    logger.info("本地 PPT 生成完成: %s（%d 页，模板=%s）", out_path, page_count, template_path or "内置商务")
+    logger.info(
+        "本地兜底 PPT 生成完成: %s（%d 页，模板=%s）", out_path, page_count, template_path or "内置简洁"
+    )
     return page_count

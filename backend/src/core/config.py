@@ -41,12 +41,43 @@ class Settings(BaseSettings):
     QWEN_BASE_URL: str = ""
     QWEN_MODEL: str = "qwen3.8max"
 
-    # ---- PPT 专职模型（D4 P05 主方案：百度云 PPT 模型，每日 10 次免费）----
-    # 占位配置：D4 由用户提供真实 endpoint/key 后填写；免费次数用完后自动降级自研 gen_ppt.py 兜底
-    BAIDU_PPT_API_KEY: str = ""
-    BAIDU_PPT_BASE_URL: str = ""  # 百度云千帆 PPT 生成服务地址（D4 待填）
-    BAIDU_PPT_MODEL: str = ""     # PPT 专职模型名（D4 待填）
-    BAIDU_PPT_DAILY_QUOTA: int = 10  # 每日免费次数（用于配额判断，用尽走自研兜底）
+    # ---- PPT 工坊（v2.0 大点 02：百度 PPT LLM 已整体移除，改为本地 PPT 生成 Agent）----
+    # 可选直连 PPT LLM（方式 A）：只留抽象位，当前无实现；配好 provider 才会启用
+    PPT_LLM_PROVIDER: str = ""             # 预留：以后接别的付费 PPT LLM 时填实现名
+    PPT_LLM_BASE_URL: str = ""
+    PPT_LLM_API_KEY: str = ""
+
+    # 默认链路（方式 B）：PPT 生成 Agent
+    PPT_AGENT_ENABLED: bool = True
+    PPT_AGENT_PAGE_LIMIT: int = 40           # 页数硬上限
+    PPT_AGENT_MAX_FIX_PER_PAGE: int = 2      # 每页自检修补轮数上限
+    PPT_AGENT_TOTAL_TIMEOUT_S: int = 900     # 整单超时（超时置失败，保留已产页）
+    PPT_SANDBOX_ROOT: str = "user_data/ppt"  # 账号沙箱根（相对 backend/）
+    PPT_PROGRESS_TTL: int = 7200             # Redis 进度 key TTL（秒）
+    PPT_IMAGES_ENABLED: bool = True          # Openverse 配图开关（关掉只出图标/形状版式）
+    PPT_IMAGE_API_BASE: str = "https://api.openverse.org/v1/images/"  # 可换镜像/代理地址
+    PPT_IMAGE_TIMEOUT: float = 30.0          # 单次图片检索/下载超时
+    PPT_IMAGE_MAX_PER_PAGE: int = 2          # 每页图片上限
+    PPT_IMAGE_MAX_BYTES: int = 8 * 1024 * 1024   # 单图体积上限
+    PPT_IMAGE_MAX_TOTAL: int = 20            # 单任务下载图片总数上限
+    # 留空 = 自动定位：项目内 tools/officecli/officecli.exe → 项目根 officecli.exe → 本机旧安装路径
+    PPT_OFFICECLI_PATH: str = ""
+    PPT_OFFICECLI_TIMEOUT: float = 120.0     # 单次 officecli 调用超时
+
+    # 多模态段（PPT Agent 专用，不接主模型）：默认 AGNES；PROVIDER 留多实现位
+    PPT_VISION_PROVIDER: str = "agnes"
+    PPT_VISION_BASE_URL: str = "https://apihub.agnes-ai.com/v1"
+    PPT_VISION_API_KEY: str = ""
+    PPT_VISION_MODEL: str = "agnes-2.5-flash"
+    PPT_VISION_MAX_TOKENS: int = 800         # ★ 实测：它先输出 reasoning_content，预算小了 content 为空
+    PPT_VISION_TIMEOUT: float = 60.0
+    PPT_VISION_REVIEW: bool = True           # 逐页审图开关（关掉只截图不判定）
+
+    # ---- 图库（v2.0 大点 02：Openverse 不可达时换 Unsplash；provider 可配）----
+    UNSPLASH_APP_ID: str = ""
+    UNSPLASH_ACCESS_KEY: str = ""            # Client-ID（search 接口用这个）
+    UNSPLASH_SECRET_KEY: str = ""            # OAuth 用；search 不需要
+    PPT_IMAGE_PROVIDER: str = "unsplash"     # unsplash（默认）/ openverse
 
     # ---- 文件存储 ----
     UPLOAD_DIR: str = "uploads"
@@ -70,6 +101,50 @@ class Settings(BaseSettings):
     RAG_MMR_DOC_CAP: int = 2  # v3.0 同文档最多入选席位数（文档级配额，治"同主题不同文档互相挤占"）
     RAG_TOPIC_BOOST: float = 0.3  # v4.0 主题一致性加权系数（匹配 query 主题的 rerank 分乘 1+α，治 plans 同质化）
     KNOWLEDGE_SRC_DIR: str = "knowledge_src"  # 知识库源文档目录（四类子目录）
+
+    # ---- v2.0 大点 01：回答提速（重排精度 / 会话缓存 / 上下文预算 / Agent）----
+    RERANKER_DTYPE: str = "fp16"          # fp16 / fp32；fp16 实测 n=30 由 36s 降到 3.1s 且排序不变
+    RERANKER_BATCH_SIZE: int = 8          # 显式 batch，避免默认值放大显存峰值
+    RAG_HIGH_PRECISION_DEFAULT: bool = False  # 请求未带 high_precision 时的默认（False=半精度=快）
+    RAG_CONV_CACHE_ENABLED: bool = True   # 会话级子块缓存总开关
+    RAG_CONV_CACHE_TTL: int = 600         # 滑动 TTL：回答完成后再计时，10 分钟无追问即清
+    RAG_CONTEXT_BUDGET_CHARS: int = 16000  # 喂给模型的 context 字符预算（改造前 100K~209K）
+    AGENT_ENABLED: bool = True            # Agent 化总开关；False → 直连 llm_client.chat_stream
+    AGENT_MAX_TOOL_ROUNDS: int = 2        # Agent 最多工具轮数（含一次补检）
+    AGENT_MAX_SPLIT_QUERIES: int = 2      # 多主题拆分上限（拆分=多次检索=时长翻倍）
+    RAG_WARMUP_ON_START: bool = True      # 服务启动时后台预热检索链路（BM25/embedding/重排）
+
+    # ---- v2.0 大点 03：意图识别（回答前门禁）----
+    CHAT_INTENT_ENABLED: bool = True       # False = 完全跳过判定（回到 01 收官行为，应急回滚开关）
+    CHAT_INTENT_TIMEOUT: float = 8.0       # 单次判定超时（秒）；超时按 knowledge 继续
+    CHAT_INTENT_MAX_HISTORY_CHARS: int = 600   # 判定输入里「上一轮」文本上限
+    CHAT_INTENT_MAX_TOKENS: int = 80       # 判定输出上限（一行 JSON 足够）
+
+    # ---- v2.0 大点 04：知识贡献升级 + Agent 贡献渠道 ----
+    KB_CONTRIB_MIN_CHARS: int = 1000       # 审核通过前的最小有效字数（清洗后）
+    KB_BUILD_MIN_BYTES: int = 2000         # 全量重建时跳过的文件字节阈值（原硬编码 2000）
+    KB_CONTRIB_EXTS: str = ".md,.markdown,.txt,.docx,.pdf,.html,.htm"
+    KB_CONTRIB_MAX_MB: int = 10            # 单文件上限
+    KB_MINERU_ENABLED: bool = True         # 关掉 → 全部走内置兜底转换
+    KB_MINERU_CMD: str = "mineru-kit"      # 独立环境安装（uv tool install mineru）；kit 版免本地服务
+    KB_MINERU_TIMEOUT: float = 600.0       # 单文件转换超时（39 页报告实测 89s）
+    KB_MINERU_TIER: str = "basic"          # pdf: flash/basic/standard/advanced；docx 固定 flash
+    KB_MINERU_ARGS: str = ""               # 额外 CLI 参数模板，可用 {input} {outdir}
+    KB_AGENT_DOCS_DIR: str = "Methodology" # 相对项目根（team/）的方法论目录
+    KB_AGENT_SCOUT_ENABLED: bool = True    # Agent 网搜总开关（回滚用）
+    KB_FETCH_MAX_SITES: int = 3            # 单任务最多站点数
+    KB_FETCH_MAX_PAGES: int = 8            # 单任务最多页面数
+    KB_FETCH_MAX_BYTES: int = 8388608      # 单任务下载上限（8MB）
+    KB_FETCH_TIMEOUT_S: int = 600          # 单任务总时长
+    KB_FETCH_DENY_HOSTS: str = ""          # 逗号分隔的额外黑名单（内网/本机默认硬禁）
+    # 采集搜索引擎（配置驱动，格式：`名称|搜索URL模板|结果选择器`，用 `;` 分隔，按顺序回退）
+    # 百度对无头浏览器会弹验证码，故默认不含百度
+    KB_SCOUT_ENGINES: str = (
+        "360|https://www.so.com/s?q={query}|li.res-list h3 a, #main h3 a;"
+        "sogou|https://www.sogou.com/web?query={query}|h3 a, .vrwrap h3 a;"
+        "bing|https://cn.bing.com/search?q={query}&setlang=zh-CN&cc=CN|li.b_algo h3 a, h2 a"
+    )
+    KB_GAP_MIN_INSUFFICIENT: int = 1       # 触发采集的"资料不足"次数阈值（预留）
 
     # ---- LLM 调用参数 ----
     LLM_TIMEOUT: float = 60.0

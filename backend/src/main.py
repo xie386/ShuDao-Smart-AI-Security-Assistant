@@ -50,7 +50,33 @@ from src.core.config import settings
 settings：全局配置单例（pydantic-settings 读 .env）。APP_NAME/APP_VERSION/UPLOAD_DIR 等
 统一从这里取，避免配置硬编码散落。
 """
-from src.routers import auth, chat, exam, hazards, kb, knowledge_contrib, notifications, ppt, stats, uploads, user_profile, users, vision
+import logging as _logging
+"""
+注释文档:
+v2.0 大点 01：应用级日志（uvicorn 只配置自己的 logger，业务模块 INFO 默认被 root=WARNING 吞掉）。
+提速链路的关键耗时（预处理/判定/检索/生成、BM25 语料加载、预热结果）都打 INFO，
+不配这一行就看不到 —— 排查慢在哪全靠这些日志。
+"""
+_logging.basicConfig(
+    level=_logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+from src.routers import (
+    auth,
+    chat,
+    exam,
+    hazards,
+    kb,
+    kb_agent_docs,
+    knowledge_contrib,
+    notifications,
+    ppt,
+    stats,
+    uploads,
+    user_profile,
+    users,
+    vision,
+)
 """
 注释文档:
 各子路由模块（按功能拆分，用 APIRouter 定义，最后在下方 include_router 合并进主应用）：
@@ -74,6 +100,25 @@ async def lifespan(app: FastAPI):
       首次创建在模块级 mount 之前完成，见下文）。
     """
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+
+    # v2.0 大点 01：后台预热检索链路（BM25 语料/索引 + embedding + 重排模型）。
+    # 冷启动实测 ~175s（Chroma 全量读取 159.8s + BM25 构建 14.9s），必须挪到启动阶段，
+    # 否则用户第一问要等近 3 分钟（首问预算 60s）。失败只记日志，不影响服务可用。
+    if getattr(settings, "RAG_WARMUP_ON_START", True):
+        import threading
+
+        def _warm() -> None:
+            try:
+                from src.ai.rag import warmup
+
+                warmup()
+            except Exception as exc:  # noqa: BLE001
+                import logging
+
+                logging.getLogger(__name__).warning("检索链路预热失败: %s", exc)
+
+        threading.Thread(target=_warm, name="rag-warmup", daemon=True).start()
+
     yield  # 此处挂起：应用运行期间一直停留在这里，退出时才继续向下执行（可写清理逻辑）
 
 
@@ -98,6 +143,22 @@ app.add_middleware(
     allow_headers=["*"],                      # 允许的请求头
 )
 
+# ---- 历史静态通道封禁（v2.0 大点 00）----
+# 试卷导出文件历史上落在 uploads/exam/ 并被 /uploads 静态暴露（等于两条无鉴权通道）。
+# 新链路已改为带鉴权的下载端点；此处把老通道封死——既不迁移历史文件，也不影响老记录下载
+# （下载端点会按数据库 file_path 兼容解析到 uploads/exam/）。
+from fastapi.responses import JSONResponse  # noqa: E402
+
+
+@app.middleware("http")
+async def _block_legacy_exam_static(request, call_next):
+    if request.url.path.startswith("/uploads/exam/"):
+        return JSONResponse(
+            {"detail": "该路径已停用，请通过试卷下载接口获取"}, status_code=403
+        )
+    return await call_next(request)
+
+
 # ---- 挂载子路由 ----
 # include_router 把各模块 APIRouter 定义的路由表合并进主应用（共享中间件与依赖），
 # 各模块内部已通过 prefix 定义好自己的路径前缀。
@@ -113,6 +174,7 @@ app.include_router(ppt.router)
 app.include_router(users.router)
 app.include_router(exam.router)
 app.include_router(knowledge_contrib.router)
+app.include_router(kb_agent_docs.router)
 app.include_router(user_profile.router)
 
 # ---- 静态文件托管 ----
@@ -128,17 +190,18 @@ import mimetypes  # noqa: E402
 
 mimetypes.add_type("text/markdown", ".md")
 
-# PPT 产物目录（D4：生成的 .pptx 由 PptService 写入，/ppt-files 静态托管供导出下载 P07）
+# PPT 产物目录（D4：生成的 .pptx 由 PptService 写入）
+# v2.0 大点 00：**取消 /ppt-files 静态挂载**——产物属私有数据，唯一下载出口是
+# GET /api/ppt/{task_id}/download（JWT + 归属校验）。目录仍要建，生成时要写盘。
 from src.services.ppt_service import PPT_FILES_DIR  # noqa: E402
 
 Path(PPT_FILES_DIR).mkdir(parents=True, exist_ok=True)
-app.mount("/ppt-files", StaticFiles(directory=PPT_FILES_DIR), name="ppt-files")
 
-# 考试工坊导出目录（优化丰富期：试卷 md/docx/pdf 由 exam_export 写入，/exam-files 静态托管供下载）
+# 考试工坊导出目录（v2.0 起为 exam_files/，不再位于 uploads/ 之下）
+# 同样取消静态挂载，唯一下载出口是 GET /api/exam/papers/{paper_id}/download。
 from src.services.exam_export import EXAM_FILES_DIR  # noqa: E402
 
 Path(EXAM_FILES_DIR).mkdir(parents=True, exist_ok=True)
-app.mount("/exam-files", StaticFiles(directory=EXAM_FILES_DIR), name="exam-files")
 
 # demo 前端（D3 vibe 对接：AI 问答流式聊天），静态托管 /demo
 # 前端统一放项目根 front/ 目录（与 backend/ 平级），后端只做静态托管

@@ -28,6 +28,8 @@ Thumbs.db
 
 # ── 向量库（7.2G，由 backend/scripts/collect_kb.py 一键重建）──
 backend/chroma/
+# BM25 语料缓存（约 18MB，v2.0 大点 01 起由检索链路自动重建；知识入库时会自动失效）
+backend/bm25_corpus.pkl
 
 # ── 知识源原始文档（104M，由 backend/scripts/crawl_laws.py 等重新采集）──
 backend/knowledge_src/
@@ -35,9 +37,20 @@ backend/knowledge_src/
 # ── 上传文件（隐患图片 / 头像 / 导出的 PPT·试卷，用户数据）──
 backend/uploads/
 
+# ── 生成产物（v2.0 起独立目录，属用户私有产物，不入库）──
+backend/ppt_files/
+backend/exam_files/
+# v2.0 大点 02：PPT Agent 的账号沙箱（模板副本 / 下载图片 / 逐页截图 / 中间稿 / 日志 / 成品）
+backend/user_data/
+
 # ── 日志与临时文件 ──
 *.log
 logs/
 *.tmp
 backend/scripts/_diag_out.txt
 backend/scripts/_diag_retrieval.py
+
+# ── v2.0 大点 04：Agent 方法论（运行期数据，不入库；只推 .example 模板）──
+Methodology/*.md
+!Methodology/*.md.example
+Methodology/*.bak

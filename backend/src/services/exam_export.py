@@ -21,8 +21,11 @@ TYPE_NAMES = {
     "essay": "简答题",
 }
 
-# 导出文件目录（相对 backend/），main.py 挂载为 /exam-files 静态托管
-EXAM_FILES_DIR = Path(settings.UPLOAD_DIR) / "exam"
+# 导出文件目录（相对 backend/）。v2.0 大点 00：从 uploads/exam/ 迁出，
+# 不再被 /uploads 静态暴露，唯一下载出口是 /api/exam/papers/{id}/download。
+# 历史记录仍指向 uploads/exam/（old file_path = "exam/paper_xxx.md"），
+# 由 ExamService.download_path() 做两段兼容解析，不改库、不迁移文件。
+EXAM_FILES_DIR = Path("exam_files")
 
 
 def _group_by_type(questions: list[dict]) -> list[tuple[str, list[dict]]]:
@@ -159,7 +162,7 @@ def to_pdf(paper: dict, path: str | Path) -> Path:
 # ---------------- 统一入口 ----------------
 
 def export_paper(paper: dict, fmt: str, paper_id: str) -> str:
-    """按格式导出试卷文件，返回相对路径（如 exam/paper_xxx.md）。
+    """按格式导出试卷文件，返回相对路径（如 exam_files/paper_xxx.md）。
 
     fmt: md / docx / pdf（非法抛 ValueError）
     """
@@ -177,6 +180,6 @@ def export_paper(paper: dict, fmt: str, paper_id: str) -> str:
         filename = f"{paper_id}.{fmt}"
         renderer(paper, EXAM_FILES_DIR / filename)
 
-    rel = f"exam/{filename}"
+    rel = f"exam_files/{filename}"
     logger.info("试卷已导出: %s（%s）", rel, fmt)
     return rel

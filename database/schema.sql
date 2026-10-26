@@ -99,6 +99,36 @@ CREATE TABLE IF NOT EXISTS `ppt_tasks` (
 -- 业务：提示词/文档输入 → 出卷子智能体生成试卷+参考答案 → 导出 md/docx/pdf
 -- 模式对齐 ppt_tasks：状态机（草稿→生成中→已完成/失败）+ file_path 落库
 -- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `agent_clients` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(64) NOT NULL,
+  `api_key_hash` varchar(128) DEFAULT NULL,
+  `model` varchar(64) DEFAULT NULL,
+  `owner_user_id` int DEFAULT NULL,
+  `scopes` varchar(255) NOT NULL DEFAULT 'contrib:submit',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT (now()),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_agent_clients_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='v2.0 大点 04：非人类用户（Agent）身份';
+
+CREATE TABLE IF NOT EXISTS `agent_runs` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `conversation_id` int DEFAULT NULL,
+  `gap_question` text,
+  `urls` text COMMENT 'JSON：访问过的 URL 与结果',
+  `model` varchar(64) DEFAULT NULL,
+  `methodology_version` varchar(32) DEFAULT NULL,
+  `result_md_path` varchar(255) DEFAULT NULL,
+  `contrib_id` int DEFAULT NULL,
+  `status` varchar(24) NOT NULL DEFAULT 'running' COMMENT 'running/submitted/rejected/failed/no_gap',
+  `note` text,
+  `created_at` datetime NOT NULL DEFAULT (now()),
+  PRIMARY KEY (`id`),
+  KEY `ix_agent_runs_conv` (`conversation_id`),
+  KEY `ix_agent_runs_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='v2.0 大点 04：Agent 采集运行记录（可回放）';
+
 CREATE TABLE IF NOT EXISTS `exam_papers` (
   `id` int NOT NULL AUTO_INCREMENT,
   `paper_id` varchar(32) NOT NULL,
@@ -134,6 +164,12 @@ CREATE TABLE IF NOT EXISTS `knowledge_contributions` (
   `review_note` text,
   `review_by` int DEFAULT NULL,
   `chunk_count` int DEFAULT NULL,
+  `source_kind` enum('user','agent') NOT NULL DEFAULT 'user' COMMENT 'v2.0 大点 04：贡献来源',
+  `source_agent_id` int DEFAULT NULL COMMENT 'v2.0 大点 04：agent_clients.id（source_kind=agent 时）',
+  `origin_urls` text COMMENT 'v2.0 大点 04：JSON 数组，Agent 采集来源 URL',
+  `origin_filename` varchar(255) DEFAULT NULL COMMENT 'v2.0 大点 04：上传时的原始文件名',
+  `md_path` varchar(255) DEFAULT NULL COMMENT 'v2.0 大点 04：落盘相对路径 knowledge_src/{type}/{filename}.md',
+  `convert_by` varchar(32) DEFAULT NULL COMMENT 'v2.0 大点 04：mineru/builtin/fallback/direct',
   `created_at` datetime NOT NULL DEFAULT (now()),
   `updated_at` datetime NOT NULL DEFAULT (now()),
   PRIMARY KEY (`id`),
@@ -147,6 +183,7 @@ CREATE TABLE IF NOT EXISTS `knowledge_contrib_timeline` (
   `contrib_id` int NOT NULL,
   `action` varchar(64) NOT NULL,
   `operator_id` int DEFAULT NULL,
+  `actor_kind` varchar(16) NOT NULL DEFAULT 'human' COMMENT 'v2.0 大点 04：human/agent',
   `note` text,
   `created_at` datetime NOT NULL DEFAULT (now()),
   PRIMARY KEY (`id`),

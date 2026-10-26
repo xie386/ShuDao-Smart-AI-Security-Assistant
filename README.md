@@ -78,7 +78,7 @@ team/
 
 ## 四、阅读指南（建议顺序 · 逐文件详解版）
 
-> ⭐ **核心章节**。后端共 **61 个 .py 源文件 + 24 个脚本 + 10 个测试文件 + 1 个提示词配置**。不要按目录顺序读，按下面「**地基 → 基础设施 → AI 层 → 业务层 → 路由层 → 契约 → 工具 → 入口 → 脚本 → 测试 → 前端**」的难度递进，**每个文件都列了「看什么 + 思考题」**。
+> ⭐ **核心章节**。后端共 **73 个 .py 源文件 + 25 个脚本 + 14 个测试文件 + 1 个提示词配置**。不要按目录顺序读，按下面「**地基 → 基础设施 → AI 层 → 业务层 → 路由层 → 契约 → 工具 → 入口 → 脚本 → 测试 → 前端**」的难度递进，**每个文件都列了「看什么 + 思考题」**。
 >
 > 阅读节奏建议：分 4 天，每天 2 步。第 1-2 步打地基，第 3-5 步读核心，第 6-9 步扫全貌，第 10-12 步看工程化。每读完一步合上文件，能回答思考题再进下一步。
 
@@ -117,23 +117,24 @@ team/
 
 ---
 
-### 第 2 步：核心基础设施（core/ 全部 5 个文件）
+### 第 2 步：核心基础设施（core/ 全部 6 个文件）
 
 | 顺序 | 文件 | 看什么 / 思考题 |
 | --- | --- | --- |
-| 2️⃣-1 | `src/core/config.py` | `Settings(BaseSettings)` 从 `.env` 读全部配置。注意：模型地址是本机路径（`D:/LLM/model/bge-large-zh`）+ `cuda` 设备 + `BAIDU_PPT_DAILY_QUOTA=10`（每日免费次数）。思考：为什么嵌入模型用本地路径而不是 API？（课程要求本地部署 + 中文检索质量）为什么 PPT 要记录每日配额？（用尽降级的前提） |
+| 2️⃣-1 | `src/core/config.py` | `Settings(BaseSettings)` 从 `.env` 读全部配置。注意：模型地址是本机路径（`D:/LLM/model/bge-large-zh`）+ `cuda` 设备；v2.0 大点 02 起多了 `PPT_*` 一整段（Agent 开关 / 沙箱根 / 页数上限 / Openverse 图片 / OfficeCLI 路径 / `PPT_VISION_*` 视觉段、`PPT_IMAGE_PROVIDER` + `UNSPLASH_*` 图源段）。思考：为什么嵌入模型用本地路径而不是 API？（课程要求本地部署 + 中文检索质量）为什么把「模型/图片源/编辑器路径」都做成配置？（换模型、换图库、换机器都不改代码） |
 | 2️⃣-2 | `src/core/db.py` | SQLAlchemy 2.x 引擎 + `get_db` 依赖。注意 docstring 强调「**不自动建表**」。思考：为什么 FastAPI 用 `Depends(get_db)` 而不是全局 Session？（请求级隔离，用完即关，防连接泄漏） |
 | 2️⃣-3 | `src/core/redis_client.py` | Redis 连接池。注意端口 **6380**（非默认 6379）、密码 123456、`ping_redis()` 优雅探测（服务未启动不崩）。思考：Redis 挂了系统还能用吗？（能——通知 push 优雅降级，见 notification_service） |
 | 2️⃣-4 | `src/core/security.py` | bcrypt 密码哈希 + JWT 签发/校验。注意 docstring 强调「**不引入 passlib**」（bcrypt>=5.0 与 passlib 兼容问题）。思考：为什么密码要哈希而不是加密？（哈希不可逆，库泄露不还原明文）JWT 的 SECRET_KEY 在哪配置？ |
-| 2️⃣-5 | `src/core/__init__.py` | 空包标记。思考：为什么 Python 包都要有 `__init__.py`？（标记目录为包，可被 import） |
+| 2️⃣-5 | `src/core/paths.py` | **v2.0 大点 02 · 账号沙箱路径的唯一事实源**（153 行，仿 deep_search_pro 的归口模式）：`user_root / task_root / task_dir / out_path / log_path / cleanup_task` + 三个安全函数（`safe_name` 只取 basename、`safe_join` 根内校验、`is_within` 双路径判断）。**只给路径、不建目录**；目录名只由整数 id 拼（`u17/t11`），天然免疫 `..` 与盘符注入。思考：为什么账号目录不用 username？（可改名 → 目录失联）为什么"只给路径不建目录"？（避免读的时候顺手建目录这种隐形副作用） |
+| 2️⃣-6 | `src/core/__init__.py` | 空包标记。思考：为什么 Python 包都要有 `__init__.py`？（标记目录为包，可被 import） |
 
 > 💡 学习心法：core 层是「横切能力」——任何模块都可能用到 config（settings）、db（Session）、security（get_current_user）。读完后你应该知道「**一个请求进来，依赖注入链是怎样的**」：路由参数 `user: dict = Depends(get_current_user)` → security 解析 JWT → 查 DB → 返回 {id, role}。
 
 ---
 
-### 第 3 步：AI 层（ai/ 全部 12 个文件 —— 项目含金量最高）
+### 第 3 步：AI 层（ai/ 全部 21 个文件 —— 项目含金量最高）
 
-> 课程硬性要求 **LangChain 架构**（已重构 LangChain 1.x）。按「**模型 → 嵌入 → 分块入库 → 检索 → 重排 → 问答 → 视觉 → 子智能体 → PPT → 提示词**」读。
+> 课程硬性要求 **LangChain 架构**（已重构 LangChain 1.x）。按「**模型 → 嵌入 → 分块入库 → 检索 → 重排 → 问答 → 视觉 → 子智能体 → PPT 生成 Agent → 提示词 → 01 提速四件套**」读。
 
 | 顺序 | 文件 | 看什么 / 思考题 |
 | --- | --- | --- |
@@ -146,15 +147,24 @@ team/
 | 3️⃣-7 | `src/ai/vision.py` | 视觉子智能体（qwen，LangChain ChatOpenAI 多模态）。复用 prompts.yml 的 `hazard_vision` 场景（四段式，强制 JSON，含 location 坐标）。思考：图片怎么传给多模态模型？（OpenAI 兼容 content 含 text + image_url data URL） |
 | 3️⃣-8 | `src/ai/exam_agent.py` | **考试工坊出卷子智能体**。复用 llm_client + RAG **只读引用**（可选 hybrid_retrieve 增强知识依据）。注意 `_extract_json` 容错（LLM 输出可能带 markdown 围栏）。思考：为什么试卷生成要「结构化 JSON + 逐题校验」而不是自由文本？（前端要渲染题目/答案/解析，字段必须对齐） |
 | 3️⃣-9 | `src/ai/knowledge_review_agent.py` | **知识贡献审核预筛子智能体**。依据：`docs/施工安全领域文件鉴别判定标准.md`（浓缩进 prompts.yml 的 knowledge_review 模板）。思考：为什么 AI 只「预筛辅助」不「终审」？（审核是管理职责，AI 意见仅供参考 + 判定标准文档双保障） |
-| 3️⃣-10 | `src/ai/ppt_baidu.py` | 百度千帆 PPT 专职 API（主方案）。`generate_ppt_by_outline` SSE 流式，status 流转「PPT生成中×N → 生成结束 → 导出中 → 导出结束」。思考：为什么 PPT 用专职 API 而不是通用 LLM？（专用模型生成 PPT 质量远高于通用模型，每日 10 次免费对演示足够） |
-| 3️⃣-11 | `src/ai/ppt_local.py` | PPT 本地兜底（百度额度用尽/故障时）。A 方案 python-pptx 商务模板渲染 + B 方案 HTML 封面截图（可选）。思考：为什么保留本地方案？（API 有配额和故障风险，离线兜底保证演示不翻车） |
+| 3️⃣-10 | `src/ai/ppt_agent.py` | **v2.0 大点 02 · PPT 生成 Agent（默认链路，651 行，本层最长）**。混合式编排（裁定 3）：**代码管阶段**（S0 预处理→S1 检索→S2 判定→S3 补检→S4 策划→S5 素材→S6 逐页制作+自检→S7 校验→S8 落盘，进度条就是它），**Agent 管每页**（标题/要点/配图意图/版式类型）。要点：`_alloc()` 页数预算（每章至少 1 页；≤7 页不排章节页）、`_rebalance()/_ensure_sections()` 拆页补页**不编造内容**、`_next_fix()` 修法递进（先缩字号，再砍要点/去图）、OfficeCLI 缺失自动转 `ppt_local` 兜底、事件同时进 SSE 与 `logs/{task_id}.jsonl`。思考：为什么不让 Agent 自己决定走哪些阶段？（会跳步/成本失控/进度条没法映射）为什么"砍内容"必须放在第二轮修法？（信息损失不可逆） |
+| 3️⃣-11 | `src/ai/ppt_local.py` | **PPT 兜底渲染器**（python-pptx）。现在只有两条用途：快速模式（`POST /api/ppt/{id}/generate`）与"OfficeCLI 不可用"时的兜底。大点 02 修掉三处静默劣化（裁定 11）：要点不再 `[:5]` 截断（>5 双栏、>10 才截断且记 warning）、目录分两栏不溢出、按条数与长度降字号。思考：为什么 Agent 链路不允许它参与逐页编辑？（同一文件两个写入方必互相覆盖 —— 裁定 8） |
 | 3️⃣-12 | `src/ai/__init__.py` | 空包标记，注意注释「重依赖全部 lazy-import」。思考：lazy import 的价值？（核心后端轻量启动，模型加载推迟到首次调用） |
+| 3️⃣-13 | `src/ai/query_preprocess.py` | **v2.0 大点 01 · 问题预处理**（陈述句化 / 语义专业化 / 拆分建议 / 剔除已检索）。要点：规则快路径（已是陈述句+短+无指代+无可剔除项 → 不调模型，省 2.5~8.4s）、`split=false` 强制收敛成 1 条、拆分上限 `AGENT_MAX_SPLIT_QUERIES=2`、异常退回原话。思考：为什么「剔除已检索」只记录不删词？（删词是不可逆信息损失；正确做法是让判定器给缺口子查询）为什么拆分必须由 Agent 复核而不是每次必拆？（拆分=多发一次检索≈时长翻倍） |
+| 3️⃣-14 | `src/ai/sufficiency.py` | **v2.0 大点 01 · 充分性判定**：判断「会话已有材料够不够回答」，不够就只给**缺口子查询**。要点：`_format_material` 只喂块摘要（doc#章节 + 首 200 字），异常一律保守判「不够」。思考：为什么要保守？（宁可多查一次，不可答错）为什么退化模式（无 Redis）也要判，且只查当前问题而不整题重检？ |
+| 3️⃣-15 | `src/ai/chat_agent.py` | **v2.0 大点 01 · Agent 化**（LangChain `create_agent` + 工具 `retrieve_more`）。三个关键：① 工具内 `calls>=1` 硬拦（不靠模型自觉）② 运行上下文走 `config.configurable` + `ensure_config()`，**绝不能用 `contextvars`**（同步生成器被 Starlette 逐次丢线程池，`reset(token)` 会抛 `different Context`，异常被回落分支吞掉 → Agent 静默失效）③ 不挂 checkpointer，多轮上下文由 DB `build_history()` 注入。思考：为什么「回落直连 LLM」这个兜底反而最危险？（它让链路失效看起来像正常工作） |
+| 3️⃣-16 | `src/ai/ppt_layout.py` | **v2.0 大点 02 · 版式渲染**：把页面规格翻成 OfficeCLI batch 命令（封面/目录/章节/内容/来源/结尾）。**几何由代码定、内容由模型定**：模型不吐坐标，版式才可复现。要点：`build()` 末尾统一补 `parent=/slide[N]`（漏了整批失败，实测第一批命令就栽在这）、6 条以上走双栏、主题色可由模板 `theme1.xml` 覆盖、`_fix` 驱动修补。思考：为什么两栏阈值是 5 条？（20pt 单栏在 5.2in 高里刚好占满，再多就压线） |
+| 3️⃣-17 | `src/ai/ppt_tools.py` | **v2.0 大点 02 · 工具实现**：OfficeCLI 薄封装（create/batch/screenshot/issues/validate/**release_file**）、多图源检索与流式下载（`current_provider()`：Unsplash 默认 / Openverse 备选；重试 1 次、体积上限、等比缩放在 ppt_layout）、`kb_search`（复用 01 的 RAG）、沙箱只读文件。两个实测坑：`batch` 走 `--input` 临时文件而不是 stdin（Windows 编码）；OfficeCLI `close` 后仍有几百毫秒**锁窗**，不 `release_file()` 就删不掉文件。思考：为什么图片失败一律返回空列表而不抛异常？（一张图不能拖垮整单 —— 裁定 6） |
+| 3️⃣-18 | `src/ai/vision_agent.py` | **v2.0 大点 02 · 审图（多模态独立段）**：`PPT_VISION_*` 默认 AGNES，只给它看截图、只问四类版式问题（溢出/遮挡/对比度/缺失），输出结构化 `{ok, problems, fix_hints}`。关键坑：它先吐 `reasoning_content` 再吐 `content`，`max_tokens` 给小了 `content` 直接为空（实测 40 → 空）→ 默认 800 且只读 `content`。失败/超时一律 `ok=True + skipped`。思考：为什么审图不能当成必需步骤？（自检是加分项，不能变成故障点） |
+| 3️⃣-21 | `src/ai/agent_scout.py` | **v2.0 大点 04 · Agent 网搜采集**（330 行）：回答发现"知识库缺料"后**异步**启动，Playwright 按方法论搜集 → LLM 总结成 md → 以 `knowledge_scout` 身份提交待审。三道闸：`url_allowed()`（禁 file/localhost/内网/保留 IP，防 SSRF）、`_host_quality()`（百科/文库/问答不采，gov/org/edu 优先）、限额（站点 3/页 8/总 8MB/600s）。思考：为什么采集必须异步且必须人审？为什么方法论只注入这个工具、不进主问答 prompt？ |
+| 3️⃣-20 | `src/ai/intent.py` | **v2.0 大点 03 · 意图识别**（178 行）：回答前先判「闲聊 / 知识问答」，闲聊跳过预处理与检索直答。要点：**纯 LLM 单次判定**（提示词 `chat_intent`，不做关键词短路）、**判定客户端独立**（构造级 8s 超时 + `max_retries=0`；`llm_client.chat` 的 60s 超时对闲聊首字是灾难）、**失败一律退回 knowledge 并记 `degraded`**（误判方向代价不对称：知识题被判闲聊=无依据作答）、**带上一轮**（`last_round_hint`）否则「第一问」这类指代追问会被判成闲聊。思考：为什么超时不能靠 `model_copy(request_timeout=…)`？（实测不生效，请求照常成功）为什么判定器"永不抛异常"是硬约束？（它跑在 `event_stream()` 第一行，抛了就是整轮 500） |
+| 3️⃣-19 | `src/ai/ppt_llm.py` | **可选直连 PPT LLM 的抽象位**（裁定 2）：`PptLlmProvider` 协议 + 空注册表 + `capabilities()`。百度实现已删（裁定 1），这里只留"以后接付费 PPT LLM 不用改业务代码"的位置。思考：为什么留一个空注册表也值得？（成本近零，却保住了产品形态上的"两种工作方式"） |
 
-> 💡 学习心法：AI 层 12 个文件 = **1 个模型客户端（llm_client）+ 1 条 RAG 链（embeddings → knowledge → rag → reranker）+ 1 个视觉（vision）+ 2 个子智能体（exam / knowledge_review）+ 2 条 PPT 通道（baidu / local）+ 1 个提示词加载器（prompts）**。RAG 链是主线，其余都是「复用 llm_client + prompts.yml 的实例」。
+> 💡 学习心法：AI 层 15 个文件 = **1 个模型客户端（llm_client）+ 1 条 RAG 链（embeddings → knowledge → rag → reranker）+ 1 个视觉（vision）+ 2 个子智能体（exam / knowledge_review）+ PPT 生成 Agent 五件套（ppt_agent 编排 / ppt_layout 版式 / ppt_tools 工具 / vision_agent 审图 / ppt_llm 抽象位）+ ppt_local 兜底 + 1 个提示词加载器（prompts）+ 01 提速四件套（query_preprocess / sufficiency / chat_agent，配合 services/conv_rag_cache 与 rag 里的子块检索）**。RAG 链是主线，其余都是「复用 llm_client + prompts.yml 的实例」。
 
 ---
 
-### 第 4 步：业务服务层（services/ 全部 13 个文件）
+### 第 4 步：业务服务层（services/ 全部 16 个文件）
 
 > service 层是「**状态机 + 权限 + 通知 + 时间线**」四件套的集中地。先精读 hazard_service（范式源头），后面每个模块都是它的变体。
 
@@ -164,7 +174,7 @@ team/
 | 4️⃣-2 | `src/services/notification_service.py` | H08 通知（Redis 队列）。`push()` 存 JSON 字符串 {message, hazard_id, type}，兼容旧纯字符串数据；`TYPE_REPORT` / `TYPE_KB_CONTRIB` 等消息类型。思考：为什么通知是「service 直接 push」而不是「接口返回后前端自己弹」？（后端是唯一事实来源，刷新也能拿到）Redis 挂了的优雅降级逻辑？ |
 | 4️⃣-3 | `src/services/auth_service.py` | 认证业务：注册（**硬编码 employee**）/ 登录 / 令牌签发。思考：为什么注册强制 employee？（admin 只能 init_admin.py 创建，防越权） |
 | 4️⃣-4 | `src/services/chat_service.py` | AI 问答业务：会话管理 / 历史拼接 / 消息落库。注意：历史**截断最近 5 轮（10 条）**注入 prompt，防上下文膨胀（AI_SOLUTION §8）。思考：为什么截断而不是全量注入？（token 成本 + 长上下文稀释注意力） |
-| 4️⃣-5 | `src/services/ppt_service.py` | PPT 业务（P01–P07）：大纲生成（LLM + prompts.yml ppt_outline）→ 大纲编辑 → 生成（百度 API 主 → 本地兜底）→ 模板映射 → 文件落盘。思考：双通道降级在 service 层怎么编排？（try baidu → except 抛给本地，状态机同步更新） |
+| 4️⃣-5 | `src/services/ppt_service.py` | **PPT 业务（大点 02 重写，390 行）**：`start_agent`（卡死治理 → 抢 Redis 锁 → 状态"生成中" → 规格归一 + 模板副本）/ `finish_agent` / `fail_agent` / `workspace` / `cleanup_workspace` / `download_path`（沙箱优先 → 历史 `ppt_files/` 兼容）。生成逻辑本身在 `ai/ppt_agent.py`，service 只管状态机与规格。思考：为什么长任务要"状态先生效"？（前端立刻能看到生成中，刷新也能恢复）`_reap_if_stale` 治的是什么？（进程被杀后任务永久停在"生成中"） |
 | 4️⃣-6 | `src/services/ppt_template_service.py` | PPT 模板管理。内置 3 套风格预设（business/simple/tech）+ 用户上传模板（存 `knowledge_src/ppt_model/`，与知识库平级**不会被 RAG 采集**）。上传校验：扩展名 .pptx + ≤20MB + python-pptx 可打开（防损坏文件入库）。思考：为什么模板存 knowledge_src 目录？（复用同一文件存储区，但 .pptx 不在 RAG 采集白名单，天然隔离） |
 | 4️⃣-7 | `src/services/exam_service.py` | 考试工坊业务：试卷任务状态机（生成中→已完成/失败）+ 出卷 + 导出。流程：创建任务 → exam_agent.generate_paper → 成功写 exam_content / 失败写 error → export 落盘 uploads/exam/。思考：它和 ppt_service 的状态机设计有什么相似？（都是「异步任务 + 状态 + file_path」模式） |
 | 4️⃣-8 | `src/services/exam_export.py` | 试卷导出三格式：md / docx（python-docx）/ pdf（reportlab）。思考：为什么导出要落盘返回相对路径而不是直接返回字节流？（落盘可复用、可下载、与上传文件统一管理） |
@@ -172,9 +182,15 @@ team/
 | 4️⃣-10 | `src/services/kb_govern.py` | **在线清洗治理（知识贡献独有链路）**：`clean_text`（HTML 剥离 / 控制字符 / 噪声行剔除 / 空白压缩 / 相邻重复行去重）+ `quality_check`（字数 ≥300 / 重复段落 ≤40% / 乱码 ≤5% / HTML 残留检测）。思考：它和 scripts/govern_html.py 的分工？（govern_html 治理**采集的网页**，kb_govern 治理**用户上传文件**，两条通道各自清洗） |
 | 4️⃣-11 | `src/services/stats_service.py` | H07 统计：隐患类型分布 / 整改率 / 7 天趋势。SQLAlchemy `func.count` + group_by 聚合，**不加载全表**。思考：为什么统计要在 SQL 层聚合而不是 Python 层？（大数据量下性能差几个数量级） |
 | 4️⃣-12 | `src/services/user_profile_service.py` | 个人主页业务：`get_profile`（合并 users + user_profiles）/ `_get_or_create`（首次访问自动建空 profile）/ 改用户名查重（409）/ 改密旧密码校验（401）/ 改邮箱格式校验（422）/ 绑头像（URL 必须以 /uploads/ 开头）。思考：为什么邮箱格式校验在 service 而不在 schema？（复用性 + 前端可自由调；schema 只做必填校验） |
-| 4️⃣-13 | `src/services/__init__.py` | 空包标记。 |
+| 4️⃣-13 | `src/services/conv_rag_cache.py` | **v2.0 大点 01 · 会话级子块缓存（Redis）**，替代旧的「逐字问题 md5 缓存」。value = `blocks[]`（子块窗口文本 + 精简 metadata + rerank_score）/ `queries[]` / `rewrites[]`，TTL 600s **滑动**（回答完成后才 `touch()`，生成耗时不吃掉 TTL）。要点：**不存父块**（父块 p50 11.7 万字），只存围绕子块的窗口；所有方法 try/except，Redis 挂了静默降级。思考：为什么 `chunk_id` 用「子块文本 md5」而不是 Chroma id？（新检索块与工具补检块两条来源天然对齐）为什么 `touch()` 必须在生成结束的 `finally` 里？ |
+| 4️⃣-16 | `src/services/kb_convert.py` | **v2.0 大点 04 · 贡献文件 → Markdown**（300 行）：md 直通 / txt 补标题 / html(markdownify) / docx+pdf 走 **MinerU**（`mineru-kit`，独立 venv，子进程）/ 兜底（python-docx 段落+表格交错、pymupdf 字号分级+find_tables）。坑：PDF 默认只解析前 10 页（必须 `--pages all`）；MinerU 结果异常短要回退兜底。思考：为什么 MinerU 绝不能 pip 装进后端？（会把 starlette 升到 1.10） |
+| 4️⃣-17 | `src/services/contrib_store.py` | **v2.0 大点 04 · 落盘与回滚**（243 行）：文件名归一化 → **双重查重**（同名文件 + 标题，含 DB 已入库）→ 写 `.tmp_*` → `upsert_file` → rename → 更新 DB；失败删临时文件并回滚已写入的块。思考：为什么查重必须在"转 md 之后"？为什么 rename 必须放在入库成功之后？ |
+| 4️⃣-18 | `src/services/agent_docs.py` | **v2.0 大点 04 · Agent 方法论**（165 行）：`team/Methodology/{Methodology.md, cases.md}` 读写、`.bak` 与版本号（sha1 前 8 位）、`regenerate()`（读案例 → `methodology_writer` → 覆盖，<200 字拒绝写入）。实体文件 gitignore，只推 `.example`。思考：方法论为什么要版本号？（`agent_runs` 可追溯"当时用的哪版"） |
+| 4️⃣-14 | `src/services/preprocess_audit.py` | **v2.0 大点 01 · 预处理审计（A08）**：把会话每轮「原问题 → 预处理结果」配对成结构化数据，供 CLI（`scripts/show_preprocessed.py`）与 HTTP（`GET /api/conversations/{id}/preprocess-audit`）**共用同一份实现**。要点：`build_rounds()` 是纯函数（可单测）；尾部只有提问没回答时也返回一轮（生成失败也能审计）；**v2.0 大点 03 起**每轮还带 `intent`，闲聊轮 `preprocessed=None` 但照常成轮。思考：为什么把「脚本」和「接口」的判断逻辑抽到 service 而不是各写一份？（两处口径漂移是最难查的 bug） |
+| 4️⃣-15 | `src/services/ppt_progress.py` | **v2.0 大点 02 · 进度与任务锁（Redis）**：`shudao:ppt:progress:{task_id}`（hash：stage/progress/page/page_total/msg/ttl 2h）+ `shudao:ppt:lock:{task_id}`（SETNX 抢锁，TTL = 整单超时+60）。进度**不进数据库**（`ppt_tasks` 只有四态，改表要动 schema.sql）。Redis 挂了：进度静默失败、锁**降级放行**。思考：为什么锁的 TTL 要略长于整单超时？（进程崩了让锁自己过期，不留死锁） |
+| 4️⃣-16 | `src/services/__init__.py` | 空包标记。 |
 
-> 💡 学习心法：13 个 service = **1 个范式源头（hazard_service）+ 3 个变体（knowledge_contrib / exam / ppt 都抄它的状态机 + 时间线）+ 3 个 AI 业务（chat / exam_export / kb_govern）+ 2 个基础（auth / notification）+ 2 个辅助（stats / user_profile）+ 1 个模板（ppt_template）**。
+> 💡 学习心法：15 个 service = **1 个范式源头（hazard_service）+ 3 个变体（knowledge_contrib / exam / ppt 都抄它的状态机 + 时间线）+ 3 个 AI 业务（chat / exam_export / kb_govern）+ 2 个基础（auth / notification）+ 2 个辅助（stats / user_profile）+ 1 个模板（ppt_template）+ 2 个 01 新增（conv_rag_cache 会话缓存 / preprocess_audit 预处理审计）**。
 
 ---
 
@@ -187,7 +203,7 @@ team/
 | 5️⃣-1 | `src/routers/auth.py` | 注册 / 登录 / 当前用户（/api/auth/*）。注意注册时 role 从 body 读但 service 硬编码 employee（防篡改）。思考：登录返回的 TokenResponse 里 user 字段给前端存了哪些信息？ |
 | 5️⃣-2 | `src/routers/users.py` | 用户列表（/api/users，**仅 admin**）：`?role=` 逗号分隔多角色、`?q=` 搜索（纯数字按 id，否则按 username/real_name 模糊）、默认排除当前用户。思考：为什么派单选择责任人要用这个接口而不是全量？（D5 A2：解决下拉 limit 截断，50 后用户搜不到的问题） |
 | 5️⃣-3 | `src/routers/hazards.py` | 隐患路由（H01–H06）：POST /api/hazards（上报）、GET（列表，含 mine/status/level/rectified_by/reviewed_by 过滤）、GET /{id}（详情+timeline）、POST /{id}/assign（派单，仅 admin）、POST /{id}/rectify（整改）、POST /{id}/accept（验收，仅 admin）。思考：为什么列表接口一个 GET 顶所有筛选？（查询参数组合，前端一个页面多种视图） |
-| 5️⃣-4 | `src/routers/chat.py` | AI 问答（A01–A04）：POST /api/chat **SSE 流式**（StreamingResponse, text/event-stream）。看 `data: {"delta": ...}\n\n` 逐块推送 + `[DONE]` 结束的格式。思考：为什么问答用 SSE 而不是普通 JSON？（打字机效果 + 首字延迟低；SSE 比 WebSocket 简单，单向够用） |
+| 5️⃣-4 | `src/routers/chat.py` | AI 问答（A01–A04）：POST /api/chat **SSE 流式**（StreamingResponse, text/event-stream）。看 `data: {"delta": ...}\n\n` 逐块推送 + `[DONE]` 结束的格式。**v2.0 大点 03 起**：第一行是意图门禁（闲聊 → `mode=chat`，不预处理不检索），检索失败走 `_safe_retrieve()` 降级（不再 500，且不伪造来源）。思考：为什么问答用 SSE 而不是普通 JSON？（打字机效果 + 首字延迟低；SSE 比 WebSocket 简单，单向够用）为什么降级要"外侧再兜一层"？（预处理/向量库初始化崩溃同样不能 500） |
 | 5️⃣-5 | `src/routers/kb.py` | 知识库只读接口（/api/kb/list + /api/kb/doc）：供前端「引用来源」跳转阅读治理后的 md 原文 + 首页政策文件浏览。**安全设计**：仅允许 knowledge_src 四类目录下的 .md/.txt、路径 `resolve()` + 前缀校验杜绝路径穿越。思考：为什么只读接口也要防路径穿越？（../ 可读服务器任意文件，必须白名单 + resolve 双保险） |
 | 5️⃣-6 | `src/routers/ppt.py` | PPT 路由（P01–P07）：新建 / 列表 / 详情 / 编辑大纲 / 生成 / 模板。思考：P02 大纲编辑为什么是整篇替换？（简单可靠，避免部分更新的 diff 复杂度） |
 | 5️⃣-7 | `src/routers/exam.py` | 考试工坊路由（6 端点）：模板列表 / 创建生成（同步 30-60s）/ 历史 / 详情 / 导出 / 删除。思考：为什么出卷是同步等待而不是后台任务？（30-60s 可接受，前端 loading 即可，省去轮询复杂度——与 PPT 的异步状态机不同，为什么？因为 PPT 生成更慢） |
@@ -231,9 +247,9 @@ team/
 
 ---
 
-### 第 8 步：脚本层（scripts/ 全部 24 个文件 —— 知识库的「生产车间」）
+### 第 8 步：脚本层（scripts/ 全部 25 个文件 —— 知识库的「生产车间」）
 
-> 分五组：**采集 6 → 治理 3 → 入库 1 → 验证 11 → 评测 2 → 工具 1**。这些脚本支撑了「93+ 份知识源 → 治理 → 入库 → 评测」的完整 RAG 数据链路。
+> 分五组：**采集 6 → 治理 3 → 入库 1 → 验证 11 → 评测 2 → 工具 2**。这些脚本支撑了「816 份知识源 → 治理 → 入库 → 评测」的完整 RAG 数据链路。
 
 **🕷️ 采集组（6 个）**
 
@@ -283,19 +299,22 @@ team/
 | 8️⃣-22 | `scripts/rag_metrics.py` | **六指标计算**（被 eval_qa 调用）：chunk_recall_at_k / chunk_precision_at_k / 命中率 / 生成侧相关率 / 引用准确率 / 最终答案分。注意各指标是否需要 LLM 裁判。 |
 | 8️⃣-23 | `scripts/eval_qa.py` | **golden QA 评估**：100 题测试集，检索侧按跳数分组，生成侧 LLM 裁判。`--no-rewrite` / `--precision-at 4` 等参数。最终成绩 ALL@10 = 0.83（达标 P2 线 0.80）。思考：为什么评测要固定测试集 + 固定口径？（可复现、可对比迭代前后效果；RAG 好不好不能靠感觉，要指标说话） |
 
-**🔧 工具组（1 个）**
+**🔧 工具组（2 个）**
 
 | 顺序 | 文件 | 看什么 / 思考题 |
 | --- | --- | --- |
 | 8️⃣-24 | `scripts/init_admin.py` | 初始化 admin 账号（**唯一合法途径**）：默认 admin/admin123，已存在跳过不覆盖密码。思考：为什么 admin 不提供注册接口？（权限安全，管理员必须线下初始化） |
+| 8️⃣-26 | `scripts/migrate_04_kb_contrib.py` | **v2.0 大点 04 · 幂等迁移**：加 6 列 + `actor_kind` + 两张新表 + 内置 `knowledge_scout`；默认 `--dry-run`，`--apply` 才落库，末尾打印回滚 SQL。 |
+| 8️⃣-27 | `scripts/cleanup_contrib_namespace.py` | **v2.0 大点 04 · 旧块清理**：找出 `doc=contrib_*` / `source=user_contrib` 的块（按 id 去重），默认 dry-run 报告，`--apply` 才删。 |
+| 8️⃣-25 | `scripts/show_preprocessed.py` | **v2.0 大点 01 · 问题预处理审计 CLI**：按会话 id（`--conv 90`）或账号名打印每轮「原问题 → 检索式/子查询/拆分/剔除已检索/依据」，`--json` 出机器可读结果。与前端 🔎 按钮共用 `src/services/preprocess_audit.py`。思考：为什么运维脚本还要抽 service 层？（脚本与接口的判断逻辑一旦各写一份，口径漂移是最难查的 bug） |
 
-> 💡 学习心法：24 个脚本 = **数据生产线（采集→治理→入库）+ 质量门禁（verify/smoke/eval）+ 运维工具（init_admin）**。产品功能跑在 src/，数据资产生产在 scripts/——两条线互相独立又通过「knowledge_src/ + Chroma」衔接。
+> 💡 学习心法：25 个脚本 = **数据生产线（采集→治理→入库）+ 质量门禁（verify/smoke/eval）+ 运维工具（init_admin / show_preprocessed）**。产品功能跑在 src/，数据资产生产在 scripts/——两条线互相独立又通过「knowledge_src/ + Chroma」衔接。
 
 ---
 
-### 第 9 步：测试层（tests/ 全部 10 个文件）
+### 第 9 步：测试层（tests/ 全部 14 个文件）
 
-> 测试分两类：**依赖真实 MySQL 的集成测试**（auth/users/hazards/uploads/stats_notifications）和 **纯函数单元测试**（exam/knowledge_contrib/user_profile/chat 用 monkeypatch）。
+> 测试分两类：**依赖真实 MySQL 的集成测试**（auth/users/hazards/uploads/stats_notifications/isolation_download/preprocess_audit）和 **纯函数单元测试**（exam/knowledge_contrib/user_profile/chat 用 monkeypatch）。
 
 | 顺序 | 文件 | 看什么 / 思考题 |
 | --- | --- | --- |
@@ -309,6 +328,15 @@ team/
 | 9️⃣-8 | `tests/test_exam.py` | 考试工坊纯函数测试：exam_export 三格式渲染 + exam_agent 的 _extract_json 容错 / _validate_question 逐题校验 / 模板列表。 |
 | 9️⃣-9 | `tests/test_knowledge_contrib.py` | 知识贡献纯函数测试：_extract_file_text（md/txt 双编码 / docx / pdf）、常量校验、预筛 JSON 容错、判定标准文档存在性。 |
 | 9️⃣-10 | `tests/test_user_profile.py` | 个人主页测试：schemas 校验（用户名长度/密码最小/邮箱格式）+ service 邮箱/用户名校验（fake DB）+ 隐患过滤参数透传（fake Session 验证签名不报错）。 |
+| 9️⃣-11 | `tests/test_isolation_download.py` | **v2.0 大点 00 · 账号隔离**（15 用例）：PPT 产物命名含 `u{user_id}`、下载端点鉴权（本人 200 / 他人 404 / 无 token 401）、历史 `/uploads/exam/**` 通道被封 403。思考：为什么隔离要测「他人访问」而不只测「本人能下」？（鉴权漏洞只在越权路径上暴露） |
+| 9️⃣-12 | `tests/test_agent_cache.py` | **v2.0 大点 01 · 提速链路**（17 用例，全部不加载模型）：会话缓存读写/去重/12 块上限/Redis 挂掉全降级；预处理快路径/拆分上限/`split=false` 收敛/坏 JSON 兜底；判定充分/缺口上限/异常保守；上下文预算与父块去重；Agent 运行上下文走 `config`（`contextvars` 回归）。思考：为什么这批用例一个模型都不加载？（它们锁的是编排与护栏，模型质量属于测评集范畴） |
+| 9️⃣-13 | `tests/test_preprocess_audit.py` | **v2.0 大点 01 · 预处理审计（A08）**（4 用例）：`parse_preprocessed` 容错（None/非 JSON/无该键）、`build_rounds` 问答配对与「有问无答」轮次、HTTP 端点本人 200 / 他人 404 / 未登录 401。 |
+| 9️⃣-13a | `tests/test_intent_gate.py` | **v2.0 大点 03 · 意图门禁**（20 用例）：`_parse` 五种输出形态与四类垃圾输入；`detect` 的失败回退（超时/异常/不可解析）与开关关闭时**不调模型**；历史注入与长度上限；判定客户端必须是独立 `ChatOpenAI`（超时 8s、不重试）；`last_round_hint` 只取上一轮；审计 `parse_intent` 归一化；端到端「闲聊不检索、不写缓存、refs 只有 intent」。思考：为什么单测要锁"开关关闭时不调模型"？（否则回滚开关可能变成"照样花钱"） |
+| 9️⃣-13b | `tests/test_chat_degrade.py` | **v2.0 大点 03 · 检索失败降级**（6 用例）：`_safe_retrieve` 吞异常、检索抛错仍 200、`_prepare` 整体崩也降级、降级提示必须进 prompt、`_trim_current` 去掉本轮问题。思考：为什么降级要断言 `refs is None`？（降级时伪造来源比报错更危险） |
+| 9️⃣-13d | `tests/test_kb_contrib_v2.py` | **v2.0 大点 04 · 转换与落盘**（13 用例）：md/txt/html/docx/pdf 转换、1000 字门槛、文件名归一化、落盘 metadata、同名/同标题冲突、失败回滚。 |
+| 9️⃣-13e | `tests/test_agent_contrib.py` | **v2.0 大点 04 · Agent 渠道**（16 用例）：SSRF 边界 7 条、触发规则、幂等、身份认证、Agent 提交（`source_kind/actor_kind`）、方法论读写/版本/案例去重/`.example` 回退。 |
+| 9️⃣-13c | `tests/conftest.py` | **测试基础设施**：autouse 夹具把 `intent.detect` 桩成"永远 knowledge"，让所有 `/api/chat` 用例不打真模型。思考：为什么这类"隐形夹具"要写在 conftest 而不是每个文件？（一处生效、口径统一；代价是调试时要记得它存在） |
+| 9️⃣-14 | 其余（`test_knowledge_contrib` 等） | 同上口径；`test_quality_ok` 是**既有失败**（`kb_govern.quality_check` 对 200 行重复文本判不合格，而测试断言 `repeat_ratio==0.0`），与本版改动无关。 |
 
 > 💡 学习心法：测试文件是「**验收口径的代码化**」——每个测试用例对应一个业务规则（RBAC、状态机、降级、格式校验）。跑 `pytest tests/` 全绿 = 核心业务没被改坏。
 
@@ -352,6 +380,7 @@ team/
 - **NVIDIA GPU**（RTX 3050 + CUDA 12.9，嵌入/重排模型走 cuda；无 GPU 改 `EMBEDDING_DEVICE=cpu`）
 - **本地模型**：`D:/LLM/model/bge-large-zh`（嵌入）、`bge-reranker-base`（重排）
 - **Chroma 1.5.9**（集合 `safety_kb`）
+- **OfficeCLI（已随仓库分发，无需安装）**：`team/tools/officecli/officecli.exe`（31.96 MB，v1.0.158）。PPT Agent 用它逐页排版/截图/校验；`PPT_OFFICECLI_PATH` 留空即自动定位（显式配置 → `tools/officecli/` → 项目根 / 本机旧安装），找不到时降级到 python-pptx 兜底渲染
 - 操作系统：Windows（本项目在 Windows + git-bash 环境开发；前端静态文件 Linux 也可托管）
 
 ---
@@ -373,7 +402,9 @@ cd team/backend
 # SECRET_KEY / DATABASE_URL / REDIS_URL
 # DEEPSEEK_API_KEY + DEEPSEEK_BASE_URL + DEEPSEEK_MODEL（主模型）
 # AGNES_API_KEY + AGNES_BASE_URL + AGNES_MODEL（降级模型）
-# QWEN_API_KEY（视觉识别） / BAIDU_PPT_*（PPT 专职 API）
+# QWEN_API_KEY（隐患图片视觉识别）
+# PPT_VISION_*（课件审图，默认 AGNES）/ UNSPLASH_ACCESS_KEY（课件配图）
+# PPT_OFFICECLI_PATH 可留空（默认用仓库内 tools/officecli/officecli.exe）
 # EMBEDDING_MODEL_PATH / RERANKER_MODEL_PATH / EMBEDDING_DEVICE=cuda
 ```
 
@@ -421,7 +452,9 @@ PYTHONPATH= /c/python/python.exe scripts/rag_metrics.py     # 六指标
 
 ## 七、项目现状 & 下一步
 
-### 已收官（D1–D5 + 优化丰富期全部完成）
+### 已收官（D1–D5 + 优化丰富期 + v2.0 00/01/02）
+
+> **v2.0 三个大点已收官**：`00` 账号隔离性（产物鉴权下载 + 文件名带归属）、`01` AI 助手提速（fp16 重排 / 会话级子块缓存 / 问题预处理 / 充分性判定 + 缺口补检 / Agent 化 / 冷启动治理 / A08 预处理审计）、`02` PPT 工坊升级（移除百度 PPT LLM；默认链路改为本地 PPT 生成 Agent：S0–S8 阶段编排 + 逐页 OfficeCLI 制作 + AGNES 审图 + Openverse 配图 + SSE 进度 + 账号沙箱；快速模式保留）。细节见 `backend/docs/v2.0/` 的 `Verdict/` 与 `Done/`。
 
 - ✅ **D1**：项目骨架 + 认证 + 隐患上报雏形 + 数据库 10 表（P3 线）
 - ✅ **D2**：隐患闭环 H01–H06 + 消息联动 H08 + 前端单页

@@ -1,5 +1,12 @@
 """知识贡献业务（K01–K06）：提交 / 列表 / 详情 / 审核 / 审核预筛。
 
+v2.0 大点 04 起（裁定 1–6）：
+- 支持 `.html/.htm`；审核通过时先用 `kb_convert` 把原文件转成 markdown（MinerU 优先，失败兜底）；
+- 清洗后 **≥`KB_CONTRIB_MIN_CHARS`（默认 1000）字**才允许入库；
+- 入库前 `contrib_store` 做**双重查重**（同名文件/同标题），命中报「标题重复」；
+- 落盘 `knowledge_src/{doc_type}/{文件名}.md` 并入库（doc=stem、source=相对路径），
+  失败自动回滚（删临时文件 + 删已写入块），不留半份知识。
+
 核心设计（对齐 hazard_service）：
 - **K01 为文件上传**（multipart）：校验扩展名/大小 → 存盘 uploads/kb_contrib/ →
   解析文本（md/txt/docx/pdf）→ content=文件文本、file_intro=上传者编写的简介；
@@ -19,7 +26,6 @@ from fastapi import HTTPException, status, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.ai.knowledge import SPLITTERS, upsert_chunks
 from src.core.config import settings
 from src.models.knowledge_contrib import KnowledgeContribTimeline, KnowledgeContribution
 from src.models.user import User
@@ -28,7 +34,7 @@ from src.schemas.knowledge_contrib import (
     KnowledgeContribOut,
     ReviewRequest,
 )
-from src.services import kb_govern
+from src.services import contrib_store, kb_convert, kb_govern
 from src.services.notification_service import (
     TYPE_KB_CONTRIB,
     NotificationService,
@@ -39,8 +45,8 @@ logger = logging.getLogger(__name__)
 # 内容质量门槛：标题 2-128 字；文件内容 ≥50 字（过短视为碎片/无价值）；简介必填 2-500 字
 _CONTENT_MIN = 50
 _INTRO_MIN, _INTRO_MAX = 2, 500
-_ALLOWED_EXTS = {".md", ".markdown", ".txt", ".docx", ".pdf"}
-_MAX_FILE_BYTES = 10 * 1024 * 1024  # 10MB
+_ALLOWED_EXTS = {e.strip().lower() for e in settings.KB_CONTRIB_EXTS.split(",") if e.strip()}
+_MAX_FILE_BYTES = settings.KB_CONTRIB_MAX_MB * 1024 * 1024
 
 VALID_DOC_TYPES = {"laws", "procedures", "plans", "cases"}
 
@@ -59,6 +65,13 @@ def _extract_file_text(path: Path) -> str:
         from docx import Document  # lazy（全局已装 python-docx）
 
         return "\n".join(p.text for p in Document(str(path)).paragraphs)
+    if ext in (".html", ".htm"):
+        from bs4 import BeautifulSoup  # lazy
+
+        soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        return soup.get_text("\n").strip()
     if ext == ".pdf":
         import pymupdf  # lazy（全局已装 PyMuPDF 1.28+，fitz 别名已弃用）
 
@@ -127,6 +140,8 @@ class KnowledgeContribService:
             doc_type=doc_type if doc_type in VALID_DOC_TYPES else "laws",
             contributor_id=user_id,
             status="待审核",
+            origin_filename=filename[:255],
+            source_kind="user",
         )
         db.add(contrib)
         db.flush()
@@ -217,35 +232,64 @@ class KnowledgeContribService:
             )
 
         if data.approved:
-            # ① 清洗治理 + 质量校验（判定标准 §5 在线版）——不达标拒绝入库
-            clean_text = kb_govern.clean_text(contrib.content)
-            qc = kb_govern.quality_check(clean_text)
+            # ① 原文件 → markdown（MinerU 优先，失败走内置兜底；裁定 4）
+            raw_path = Path(settings.UPLOAD_DIR) / (contrib.file_path or "")
+            if not contrib.file_path or not raw_path.is_file():
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="原始文件不存在，无法转换（请让贡献者重新上传）",
+                )
+            try:
+                conv = kb_convert.to_markdown(
+                    raw_path, doc_type=contrib.doc_type, title=contrib.title
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"文件转换失败：{exc}",
+                ) from exc
+
+            # ② 清洗治理 + 质量校验（v2.0 大点 04：门槛提升到 KB_CONTRIB_MIN_CHARS）
+            clean_text = kb_govern.clean_text(conv["md"])
+            min_chars = settings.KB_CONTRIB_MIN_CHARS
+            qc = kb_govern.quality_check(clean_text, min_chars=min_chars)
             if not qc["ok"]:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="文件未通过清洗治理：" + "；".join(qc["reasons"]),
                 )
-            # ② 入向量库（增量 upsert，不重建）——失败时整体回滚，不落"已入库"
+
+            # ③ 落盘 + 入库（先查重；失败自动回滚，裁定 2/6）
             try:
-                splitter = SPLITTERS[contrib.doc_type]
-                chunks = splitter(
-                    clean_text,  # 用清洗后的文本分块（治理后的有效正文）
-                    doc=f"contrib_{contrib_id}",  # 命名空间隔离，稳定 ID 不与官方源冲突
-                    source="user_contrib",
+                stored = contrib_store.store_contribution(
+                    db,
+                    contrib,
+                    clean_text,
+                    origin=getattr(contrib, "source_kind", "user") or "user",
+                    source_agent_id=contrib.source_agent_id,
+                    convert_by=conv["converted_by"],
                 )
-                n = upsert_chunks(chunks)
-            except Exception as exc:
+                n = stored["chunks"]
+            except contrib_store.ConflictError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"标题重复：{exc.detail}",
+                ) from exc
+            except Exception as exc:  # noqa: BLE001
                 logger.exception("知识贡献入库失败 contrib=%s", contrib_id)
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"向量库写入失败：{exc}",
+                    detail=f"入库失败：{exc}",
                 ) from exc
+
             contrib.status = "已入库"
-            contrib.chunk_count = n
             contrib.review_by = operator["id"]
             contrib.review_note = data.note
-            govern_note = f"清洗治理后 {qc['chars']} 字" + ("（偏短）" if qc["short"] else "")
-            action, note = "审核通过", f"已入库（{n} 块，{govern_note}）" + (f"：{data.note}" if data.note else "")
+            govern_note = f"清洗治理后 {qc['chars']} 字（{conv['converted_by']} 转换）"
+            action = "审核通过"
+            note = f"已入库（{n} 块，{govern_note}）" + (f"：{data.note}" if data.note else "")
+            if conv["warnings"]:
+                note += "｜提醒：" + "；".join(conv["warnings"])
         else:
             contrib.status = "已驳回"
             contrib.review_by = operator["id"]
@@ -285,12 +329,20 @@ class KnowledgeContribService:
     # ---------- 内部工具 ----------
 
     @staticmethod
-    def _timeline(db: Session, contrib_id: int, action: str, operator_id: int, note: Optional[str] = None) -> None:
+    def _timeline(
+        db: Session,
+        contrib_id: int,
+        action: str,
+        operator_id: int | None,
+        note: Optional[str] = None,
+        actor_kind: str = "human",
+    ) -> None:
         db.add(
             KnowledgeContribTimeline(
                 contrib_id=contrib_id,
                 action=action,
                 operator_id=operator_id,
+                actor_kind=actor_kind,
                 note=note,
             )
         )

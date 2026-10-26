@@ -34,6 +34,15 @@ class KnowledgeContribution(Base):
     review_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     review_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # ---- v2.0 大点 04：来源与落盘信息 ----
+    source_kind: Mapped[str] = mapped_column(
+        Enum("user", "agent"), default="user", server_default="user"
+    )
+    source_agent_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    origin_urls: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON 数组
+    origin_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    md_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    convert_by: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -54,6 +63,7 @@ class KnowledgeContribTimeline(Base):
     )
     action: Mapped[str] = mapped_column(String(64))  # 提交/审核通过/审核驳回
     operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    actor_kind: Mapped[str] = mapped_column(String(16), default="human", server_default="human")
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

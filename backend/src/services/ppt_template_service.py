@@ -20,11 +20,10 @@ logger = logging.getLogger(__name__)
 PPT_MODEL_DIR = Path(settings.KNOWLEDGE_SRC_DIR) / "ppt_model"
 MAX_TEMPLATE_SIZE = 20 * 1024 * 1024  # ≤20MB
 
-# 内置模板（P04 风格预设，非真实文件）
+# 内置模板（v2.0 大点 02，裁定 7/11）：百度链路移除后只保留一套兜底版式；
+# 真正的样式来源是用户上传的 .pptx（读取其 theme1.xml 的主色/强调色）。
 BUILTIN_TEMPLATES = [
-    {"id": "business", "name": "商务（深蓝金）", "builtin": True},
-    {"id": "simple", "name": "简约", "builtin": True},
-    {"id": "tech", "name": "科技", "builtin": True},
+    {"id": "builtin_simple", "name": "内置简洁（深蓝金）", "builtin": True},
 ]
 
 
@@ -86,7 +85,7 @@ def upload_template(file: UploadFile, user_id: int) -> dict:
 
 
 def list_templates() -> list[dict]:
-    """模板列表：内置 3 套 + 用户上传全部。"""
+    """模板列表：内置兜底 1 套 + 共享模板库里的用户上传模板。"""
     items = list(BUILTIN_TEMPLATES)
     d = _ensure_dir()
     for f in sorted(d.glob("*.pptx")):
@@ -103,8 +102,11 @@ def list_templates() -> list[dict]:
 
 
 def is_custom_template(template_id: str) -> bool:
-    """判断模板 id 是否为用户上传的自定义模板（内置 3 套为 False）。"""
-    if template_id in {"business", "simple", "tech"}:
+    """判断模板 id 是否为用户上传的自定义模板（内置兜底为 False）。
+
+    大点 02 起百度链路已移除，本函数不再参与"选链路"；仍保留给调用方做区分。
+    """
+    if not template_id or template_id in {t["id"] for t in BUILTIN_TEMPLATES}:
         return False
     return (PPT_MODEL_DIR / template_id).is_file()
 

@@ -26,7 +26,7 @@ _collection = None
 
 # ---- 分块参数（AI_SOLUTION §4.1）----
 CHUNK_MIN, CHUNK_MAX = 300, 800
-OVERLAP_RATIO = 0.15
+OVERLAP_RATIO = 0.15  # 相邻块重叠比例，防边界信息丢失
 
 # ---- Chroma 集合 ----
 
@@ -370,7 +370,44 @@ def upsert_chunks(chunks: list[dict]) -> int:
         )
         logger.info("已写入 %d/%d 块", j, total)
     logger.info("已写入 %d 块到 %s", total, settings.CHROMA_COLLECTION)
+
+    # v2.0 大点 01：语料变了 → BM25 索引与磁盘缓存必须失效，否则检索会命中旧语料
+    try:
+        from src.ai.rag import invalidate_corpus_cache  # lazy，避免循环 import
+
+        invalidate_corpus_cache()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("BM25 语料缓存失效失败: %s", exc)
     return total
+
+
+def upsert_file(
+    path: str | Path,
+    doc_type: str,
+    *,
+    stem: str | None = None,
+    source: str | None = None,
+    extra_meta: dict | None = None,
+) -> int:
+    """单文件入库（v2.0 大点 04）：分块口径与 `build_from_dir` 完全一致。
+
+    - `doc` 默认取文件名 stem（贡献落盘后即"最终 md 文件名"）；
+    - `source` 默认 `knowledge_src/{doc_type}/{文件名}`（相对 backend/，正斜杠）；
+    - `extra_meta` 会并入每个子块的 metadata（如 contrib_id / origin），供引用角标与追溯。
+    """
+    src = Path(path)
+    if doc_type not in SPLITTERS:
+        raise ValueError(f"未知 doc_type: {doc_type}（可选 {list(SPLITTERS)}）")
+    text = src.read_text(encoding="utf-8")
+    doc_name = stem or src.stem
+    src_rel = source or str(Path(settings.KNOWLEDGE_SRC_DIR) / doc_type / src.name).replace("\\", "/")
+    chunks = SPLITTERS[doc_type](text, doc=doc_name, source=src_rel)
+    if extra_meta:
+        for c in chunks:
+            c.setdefault("metadata", {}).update(extra_meta)
+    n = upsert_chunks(chunks)
+    logger.info("单文件入库 %s → doc=%s（%d 块，source=%s）", src.name, doc_name, n, src_rel)
+    return n
 
 
 def build_from_dir(src_dir: str | Path | None = None, doc_type: str | None = None) -> dict:
@@ -410,8 +447,9 @@ def build_from_dir(src_dir: str | Path | None = None, doc_type: str | None = Non
         files = sorted(sub_dir.glob("*.md")) + sorted(sub_dir.glob("*.txt"))
         for f in files:
             size = f.stat().st_size
-            if size < 2000:
-                logger.info("  跳过（治理标记 drop/过小）: %s (%dB)", f.name, size)
+            min_bytes = getattr(settings, "KB_BUILD_MIN_BYTES", 2000)
+            if size < min_bytes:
+                logger.info("  跳过（治理标记 drop/过小）: %s (%dB < %dB)", f.name, size, min_bytes)
                 continue
             text = f.read_text(encoding="utf-8")
             chunks = splitter(text, doc=f.stem, source=str(f))

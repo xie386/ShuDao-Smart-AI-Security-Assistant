@@ -296,6 +296,22 @@ tr:hover td { background:#FCF9F4; }
   .rate-ico .ico-filled, .rate-ico .ico-spark { animation:none !important; }
 }
 #chips { padding:0 18px 8px; display:flex; gap:8px; flex-wrap:wrap; }
+#hp-toggle { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--text-2,#6b7280);
+  white-space:nowrap; cursor:pointer; user-select:none; margin-right:2px; }
+#hp-toggle input { accent-color: var(--primary); cursor:pointer; }
+.msg-meta { margin-top:6px; font-size:11px; color:#9ca3af; letter-spacing:.2px; }
+/* v2.0 大点 01 · A08 预处理审计块（点 🔎 展开在本轮气泡里） */
+.pre-audit { margin-top:10px; padding:10px 12px; border:1px dashed #e5c8c0; border-radius:8px;
+  background:#fffaf8; font-size:12.5px; line-height:1.7; color:#4b5563; }
+.pre-audit-title { font-weight:600; color:var(--primary); margin-bottom:6px; }
+.pre-audit .pa-row { display:flex; gap:6px; }
+.pre-audit .pa-k { color:#9ca3af; white-space:nowrap; }
+.pre-audit .pa-q { color:#111827; }
+.pre-audit ul { margin:2px 0 0 18px; padding:0; }
+.pre-audit li { margin:0; }
+.pre-audit .pa-empty { color:#9ca3af; }
+.rate-btn.rate-audit { margin-left:2px; }
+.rate-btn.rate-audit.on { color: var(--primary); border-color: var(--primary); }
 .chip { padding:4px 12px; background:var(--primary-soft); color:var(--primary); border-radius:14px; font-size:12px; cursor:pointer; border:none; }
 .chip:hover { background:#F0D9D3; }
 #input-bar { padding:10px 14px 14px; display:flex; gap:10px; border-top:1px solid var(--border); }
@@ -738,7 +754,13 @@ tr:hover td { background:#FCF9F4; }
         <div id="chat-main">
           <div id="chat-area"><div class="empty-tip">👋 你好！我是蜀道安全助手。<br>可问我安全生产问题，例如：<br>「高处作业有什么安全要求？」「防汛应急预案如何分级？」</div></div>
           <div id="chips"></div>
-          <div id="input-bar"><input type="text" id="question-input" placeholder="输入问题，回车发送…"><button class="btn btn-primary" id="send-btn">发 送</button></div>
+          <div id="chat-meta" class="msg-meta" style="padding:0 18px 4px"></div>
+          <div id="input-bar">
+            <label id="hp-toggle" title="打开后本轮重排使用全精度（更准，首轮会多等几秒）">
+              <input type="checkbox" id="hp-check"> 高精度
+            </label>
+            <input type="text" id="question-input" placeholder="输入问题，回车发送…"><button class="btn btn-primary" id="send-btn">发 送</button>
+          </div>
         </div>
       </div>
     </div>
@@ -755,27 +777,59 @@ tr:hover td { background:#FCF9F4; }
     <!-- PPT 工坊 -->
     <div class="page" id="page-ppt">
       <div style="display:flex;justify-content:space-between;align-items:flex-end">
-        <div><div class="page-title">PPT 工坊</div><div class="page-sub">P01–P07 · 输入主题 → AI 生成大纲 → 一键生成专业 PPT</div></div>
+        <div><div class="page-title">PPT 工坊</div><div class="page-sub">输入主题与要求 → PPT 生成 Agent 逐页排版（知识库取据 + 配图 + 视觉自检 + 实时进度）</div></div>
       </div>
       <div class="card">
         <h3>新建任务</h3>
         <div class="form-row">
           <div><label>讲座主题 *</label><input type="text" id="ppt-topic" placeholder="如：施工现场高处作业安全 / 临时用电安全"></div>
-          <div><label>模板风格（P04 + 自定义上传）</label>
-            <select id="ppt-template"><option value="business">商务（深蓝金）</option></select>
+          <div><label>模板（内置兜底 + 你上传的 .pptx）</label>
+            <select id="ppt-template"><option value="builtin_simple">内置简洁（深蓝金）</option></select>
           </div>
         </div>
-        <div style="display:flex;gap:10px;margin-top:14px">
-          <button class="btn btn-primary" id="ppt-create">🤖 生成大纲</button>
+        <div class="form-row" style="margin-top:12px">
+          <div><label>页数（含封面/目录/结尾）</label><input type="number" id="ppt-pages" value="10" min="3" max="40"></div>
+          <div><label>每页字数参考</label><input type="number" id="ppt-words" value="90" min="30" max="400"></div>
+          <div><label>内容超了怎么办</label>
+            <select id="ppt-overflow">
+              <option value="0">压缩到设定页数</option>
+              <option value="1">允许超页/超字数</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <label>详细要求（可选，可直接粘贴政策要点/培训要求）</label>
+          <textarea id="ppt-req" rows="3" placeholder="例：面向一线班组长，突出高处作业与临边洞口防护，语言口语化，每页要点不超过 5 条"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn btn-gold" id="ppt-agent-create">🚀 生成 PPT（Agent）</button>
+          <button class="btn btn-primary" id="ppt-create">🤖 只生成大纲</button>
           <button class="btn" id="ppt-tpl-pick" style="border:1px solid var(--line);background:#fff">📤 上传模板（≤20MB）</button>
           <input type="file" id="ppt-tpl-file" accept=".pptx" class="hidden">
-          <span class="hint" style="align-self:center">AI 生成大纲约 10-30s；免费额度用尽后自动降级本地生成</span>
+          <span class="hint" id="ppt-cap-hint" style="align-self:center">本地 Agent 生成，预计 1~5 分钟（按页数）</span>
         </div>
         <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)">
           <div style="font-size:13px;color:var(--muted);margin-bottom:8px">📄 或上传 .md 文档，AI 按文档内容生成大纲（领导优化：政策文件一键转课件）</div>
           <input type="file" id="ppt-md-file" accept=".md,text/markdown" class="hidden">
           <button class="btn" id="ppt-md-pick" style="border:1px solid var(--line);background:#fff">📁 选择 .md 文件</button>
           <span id="ppt-md-name" style="font-size:13px;color:var(--muted);margin-left:10px"></span>
+        </div>
+      </div>
+      <div class="card" id="ppt-progress-card" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0" id="ppt-progress-title">生成中…</h3>
+          <span id="ppt-progress-pct" style="font-size:13px;color:var(--muted)">0%</span>
+        </div>
+        <div style="height:10px;background:#EEF1F5;border-radius:6px;overflow:hidden;margin-top:12px">
+          <div id="ppt-progress-bar" style="height:100%;width:0;background:linear-gradient(90deg,#0E2A47,#C9A227);transition:width .3s"></div>
+        </div>
+        <div id="ppt-progress-meta" style="font-size:13px;color:var(--muted);margin-top:8px">准备中…</div>
+        <div id="ppt-progress-log" style="max-height:170px;overflow:auto;font-size:12px;font-family:Consolas,monospace;background:#F7F9FC;border-radius:8px;padding:10px;margin-top:10px"></div>
+        <div id="ppt-shots" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:12px"></div>
+        <div id="ppt-sources" style="font-size:12px;color:var(--muted);margin-top:10px"></div>
+        <div style="display:flex;gap:10px;margin-top:12px">
+          <button class="btn btn-primary" id="ppt-dl-btn" style="display:none">⬇ 下载 .pptx</button>
+          <button class="btn btn-outline" id="ppt-clean-btn" style="display:none">🧹 清理工作区（保留成品）</button>
         </div>
       </div>
       <div class="card">
@@ -839,7 +893,7 @@ tr:hover td { background:#FCF9F4; }
     <!-- 知识贡献 -->
     <div class="page" id="page-kb-contrib">
       <div style="display:flex;justify-content:space-between;align-items:flex-end">
-        <div><div class="page-title">贡献知识</div><div class="page-sub">全员上传 → 管理员审核 → 审核通过后增量入知识库（不重建向量库）</div></div>
+        <div><div class="page-title">贡献知识</div><div class="page-sub">全员上传 → 管理员审核 → 通过后落 knowledge_src 四类（首页政策文件可搜、问答可引用）；Agent 采集同走此流程</div></div>
       </div>
       <div class="card">
         <h3>📤 提交知识</h3>
@@ -862,10 +916,10 @@ tr:hover td { background:#FCF9F4; }
             </select>
           </div>
         </div>
-        <div style="margin-top:12px"><label>知识文件 *（md/txt/docx/pdf，≤10MB）</label>
+        <div style="margin-top:12px"><label>知识文件 *（md/txt/docx/pdf/html，≤10MB，清洗后正文需 ≥1000 字）</label>
           <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
             <button class="btn" id="kc-file-pick" style="border:1px solid var(--line);background:#fff">📁 选择文件</button>
-            <input type="file" id="kc-file" accept=".md,.markdown,.txt,.docx,.pdf" class="hidden">
+            <input type="file" id="kc-file" accept=".md,.markdown,.txt,.docx,.pdf,.html,.htm" class="hidden">
             <span id="kc-file-name" style="font-size:13px;color:var(--muted)">未选择文件</span>
           </div>
           <div style="margin-top:10px"><label>文件简介 *（2-500 字，由你编写）</label>
@@ -892,6 +946,31 @@ tr:hover td { background:#FCF9F4; }
           <tbody id="kc-tbody"></tbody>
         </table>
         <div class="empty-tip" id="kc-empty" style="display:none">暂无贡献记录，先在上面提交一条吧</div>
+      </div>
+
+      <!-- v2.0 大点 04 · Agent 方法论（仅管理员可见；实体文件不入库，仓库只带 .example） -->
+      <div class="card hidden" id="kc-agent-docs">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">🧭 Agent 采集方法论</h3>
+          <span class="hint" id="kc-md-version">版本 —</span>
+        </div>
+        <p class="hint" style="margin:6px 0 10px">
+          方法论决定 Agent 上网"先找哪些站、怎么点、哪些站别碰"。案例库每行一条，AI 依据案例沉淀规则。
+        </p>
+        <label>Methodology.md</label>
+        <textarea id="kc-md-content" rows="10" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px"></textarea>
+        <div style="display:flex;gap:8px;margin:8px 0 14px;flex-wrap:wrap">
+          <button class="kc-bubbles" id="kc-md-save"><span class="text">💾 保存方法论</span></button>
+          <button class="kc-bubbles gray" id="kc-md-gen"><span class="text">🤖 AI 写方法论（读案例库）</span></button>
+          <button class="btn btn-outline btn-sm" id="kc-md-reload">重新读取</button>
+        </div>
+        <label>cases.md（一行一条：日期 | 站点/URL | 动作 | 结果 | 教训）</label>
+        <textarea id="kc-cases-content" rows="5" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button class="kc-bubbles" id="kc-cases-save"><span class="text">💾 保存案例库</span></button>
+          <button class="btn btn-outline btn-sm" id="kc-runs-open">📋 查看 Agent 采集记录</button>
+        </div>
+        <div id="kc-runs-box" style="margin-top:10px;font-size:12px;color:var(--muted)"></div>
       </div>
     </div>
 
@@ -972,7 +1051,7 @@ tr:hover td { background:#FCF9F4; }
     <div class="modal-mask hidden" id="modal-ppt-outline">
       <div class="modal" style="width:640px">
         <h3>编辑大纲（P02）</h3>
-        <div class="hint" style="margin-bottom:6px">按 JSON 格式编辑：{"title","sections":[{"name","points":[]}]}，生成时百度会按大纲渲染每页。</div>
+        <div class="hint" style="margin-bottom:6px">按 JSON 格式编辑：{"title","sections":[{"name","points":[]}]}。点「🚀 生成 PPT」由 Agent 重新策划并逐页排版；也可先保存大纲再生成。</div>
         <textarea id="ppt-outline-json" style="min-height:260px;font-family:monospace;font-size:12px"></textarea>
         <div class="btns">
           <button class="btn btn-outline" onclick="closeModal('modal-ppt-outline')">取消</button>
@@ -990,6 +1069,7 @@ tr:hover td { background:#FCF9F4; }
           <button class="btn btn-outline btn-sm" onclick="closeModal('modal-kc-detail')">关闭</button>
         </div>
         <div id="kc-detail-meta" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+        <div id="kc-detail-extra" style="font-size:12px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap"></div>
         <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px">📄 文件内容（解析自上传文件）</div>
         <div id="kc-detail-content" style="font-size:13px;line-height:1.8;color:var(--ink);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;max-height:220px;overflow-y:auto"></div>
         <div style="margin-top:12px"><div style="font-size:13px;font-weight:600;color:var(--ink)">⏱️ 处理进度</div><div class="kc-tl" id="kc-detail-tl"></div></div>
@@ -1096,7 +1176,10 @@ async function applyUserAvatar() {
     else { img.classList.remove('show'); }
   } catch(e) { img.classList.remove('show'); }
 }
-function showLogin() { token=''; localStorage.removeItem('sd_token');
+function showLogin() {
+  // 隔离：先清 PPT 面板与进行中的流，再清 token —— 否则换账号后仍能看到上一个账号的进度/缩略图/下载入口
+  try { pptHardReset(); } catch (e) { /* 面板尚未初始化时忽略 */ }
+  token=''; localStorage.removeItem('sd_token');
   document.getElementById('login-view').classList.remove('hidden');
   document.getElementById('app-view').classList.add('hidden'); }
 async function doLogin() {
@@ -1110,6 +1193,7 @@ async function doLogin() {
     localStorage.setItem('sd_token', token);
     document.getElementById('user-name').textContent = me.real_name || me.username;
     document.getElementById('user-role').textContent = {admin:'管理员',safety_officer:'安全员',employee:'普通员工'}[me.role] || me.role;
+    pptHardReset();        // 换账号后必须是干净会话（进度卡/缩略图/来源都不该留）
     applyUserAvatar();
     enterApp();
   } catch(e){ alert('网络错误：' + e.message); }
@@ -1165,9 +1249,9 @@ function route() {
   else if (path === 'hazards') { show('page-hazards'); hazPage = 1; hazQuery = {}; if (qs.get('mine')) hazQuery.mine = 1; loadHazards(); }
   else if (path === 'hazard' && param) { show('page-hazard-detail'); curHazardId = parseInt(param,10); loadDetail(); }
   else if (path === 'chat') { show('page-chat'); loadConvs(); loadChips(); }
-  else if (path === 'ppt') { show('page-ppt'); loadPptTasks(); loadPptTemplates(); }
+  else if (path === 'ppt') { show('page-ppt'); if (!pptAgentBusy) pptHardReset(); loadPptTasks(); loadPptTemplates(); loadPptCapabilities(); }
   else if (path === 'exam') { show('page-exam'); loadExamTemplates(); loadExamHistory(); }
-  else if (path === 'kb-contrib') { show('page-kb-contrib'); loadKbContribs(); if (param) openKbContribDetail(parseInt(param,10)); }
+  else if (path === 'kb-contrib') { show('page-kb-contrib'); loadKbContribs(); kcLoadAgentDocs(); if (param) openKbContribDetail(parseInt(param,10)); }
   else if (path === 'profile') { show('page-profile'); loadProfile(); }
   else if (path === 'kb-doc') { show('page-kb-doc'); loadKbDoc(qs.get('path') || ''); }
   else if (path === 'notifications') { show('page-notifications'); loadNotifies(); }
@@ -1500,7 +1584,8 @@ function renderMsg(m, streamingEl) {
       + `</span>`;
     rate.innerHTML =
       `<button class="rate-btn rate-up${m.rating===1?' on':''}" onclick="rateMsg(${m.id},1)">${rateIco()}有用</button>`
-      + `<button class="rate-btn rate-down${m.rating===-1?' on':''}" onclick="rateMsg(${m.id},-1)">${rateIco()}没用</button>`;
+      + `<button class="rate-btn rate-down${m.rating===-1?' on':''}" onclick="rateMsg(${m.id},-1)">${rateIco()}没用</button>`
+      + `<button class="rate-btn rate-audit" title="查看本轮问题的预处理结果（A08 审计）" onclick="auditPre(${m.id}, this)">🔎 预处理</button>`;
     bubble.appendChild(rate);
   }
   area.appendChild(row); area.scrollTop = area.scrollHeight;
@@ -1508,6 +1593,72 @@ function renderMsg(m, streamingEl) {
 }
 async function rateMsg(id, v) {
   try { await api('/api/messages/' + id + '/rating', { method:'POST', body: JSON.stringify({ rating: v }) }); openConv(curConvId); } catch(e){ alert(e.message); }
+}
+
+/* ============ A08 预处理审计（v2.0 大点 01） ============
+   点气泡里的 🔎：以会话 id 拉一次 `/api/conversations/{id}/preprocess-audit`
+   （与 scripts/show_preprocessed.py 共用同一服务层），把「该轮」的预处理结果展开在本气泡里。
+   再点一次收起；会话有新回答时清缓存，避免拿到过期数据。 */
+let _preAuditCache = {};
+async function auditPre(msgId, btn) {
+  const bubble = btn.closest('.bubble');
+  if (!bubble) return;
+  const old = bubble.querySelector('.pre-audit');
+  if (old) { old.remove(); btn.classList.remove('on'); return; }
+  if (!curConvId) return;
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g,
+    (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  let payload = _preAuditCache[curConvId];
+  if (!payload) {
+    try {
+      const r = await api('/api/conversations/' + curConvId + '/preprocess-audit');
+      payload = await r.json();
+      _preAuditCache[curConvId] = payload;
+    } catch (e) { alert('读取预处理审计失败：' + e.message); return; }
+  }
+
+  const rounds = payload.rounds || [];
+  const idx = rounds.findIndex((x) => x.assistant_message_id === msgId);
+  const round = idx >= 0 ? rounds[idx] : null;
+  const box = document.createElement('div');
+  box.className = 'pre-audit';
+  const title = `<div class="pre-audit-title">🔎 本轮意图与预处理`
+    + (round ? `（会话 ${payload.conversation_id} · 第 ${idx + 1} 轮）` : '') + `</div>`;
+  const it = round && round.intent;
+  const intentRow = it
+    ? `<div class="pa-row"><span class="pa-k">意图判定</span><span class="pa-q">`
+      + (it.label === 'chat' ? '闲聊（未检索）' : '知识问答')
+      + ` · ${(it.ms / 1000).toFixed(1)}s · ${esc(it.model || '')}`
+      + (it.reason ? ` · ${esc(it.reason)}` : '')
+      + (it.degraded ? ` · <b>降级回退（${esc(it.degraded.why || '')}）</b>` : '')
+      + `</span></div>`
+    : '';
+
+  if (!round) {
+    box.innerHTML = title + `<div class="pa-empty">该会话中没有找到与本回答对应的提问记录</div>`;
+  } else if (!round.preprocessed) {
+    box.innerHTML = title + intentRow
+      + `<div class="pa-empty">` + (it && it.label === 'chat'
+        ? '本轮判定为闲聊：跳过问题预处理与知识库检索（v2.0 大点 03）'
+        : '该轮没有预处理记录（v2.0 大点 01 之前的消息）') + `</div>`;
+  } else {
+    const p = round.preprocessed;
+    const subs = (p.subqueries || []).map((s) => `<li>${esc(s)}</li>`).join('')
+      || `<li class="pa-empty">（无）</li>`;
+    const dropped = (p.covered_dropped || []).length
+      ? p.covered_dropped.map(esc).join('；') : '无';
+    box.innerHTML = title + intentRow
+      + `<div class="pa-row"><span class="pa-k">原问题</span><span class="pa-q">${esc(round.question)}</span></div>`
+      + `<div class="pa-row"><span class="pa-k">检索式</span><span class="pa-q">${esc(p.declarative)}</span></div>`
+      + `<div class="pa-row"><span class="pa-k">子查询 ${(p.subqueries || []).length} 条</span><span class="pa-q"><ul>${subs}</ul></span></div>`
+      + `<div class="pa-row"><span class="pa-k">拆分</span><span class="pa-q">${p.split ? '建议拆分' : '不拆分'} · ${p.used_llm ? '走模型预处理' : '规则快路径（未调模型）'}</span></div>`
+      + `<div class="pa-row"><span class="pa-k">剔除已检索</span><span class="pa-q">${dropped}</span></div>`
+      + `<div class="pa-row"><span class="pa-k">依据</span><span class="pa-q">${esc(p.reason || '')}</span></div>`;
+  }
+  bubble.appendChild(box);
+  btn.classList.add('on');
+  box.scrollIntoView({ block: 'nearest' });  // 展开后滚到可见处（否则可能被输入区挡住）
 }
 async function send() {
   const input = document.getElementById('question-input');
@@ -1517,10 +1668,13 @@ async function send() {
   renderMsg({ role:'user', content: question });
   const bubble = renderMsg({ role:'assistant', content:'' });
   const cur = document.createElement('span'); cur.className='cursor'; bubble.appendChild(cur);
+  let meta = null;
+  let answer = '';
   try {
-    const resp = await api('/api/chat', { method:'POST', body: JSON.stringify({ question, conversation_id: curConvId || null }) });
+    const hp = document.getElementById('hp-check')?.checked || false;
+    const resp = await api('/api/chat', { method:'POST', body: JSON.stringify({ question, conversation_id: curConvId || null, high_precision: hp }) });
     const reader = resp.body.getReader(); const decoder = new TextDecoder();
-    let buffer='', answer='', first=true;
+    let buffer='', first=true;
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
       buffer += decoder.decode(value, {stream:true});
@@ -1535,6 +1689,7 @@ async function send() {
           const obj = JSON.parse(payload);
           if (obj.delta) { if (first){ bubble.querySelector('.cursor')?.remove(); first=false; } answer += obj.delta; bubble.textContent = answer;
             document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight; }
+          if (obj.meta) meta = obj.meta;
           if (obj.error) { bubble.querySelector('.cursor')?.remove(); bubble.textContent = '❌ ' + obj.error; }
         } catch(e){}
       }
@@ -1542,8 +1697,32 @@ async function send() {
   } catch(e){ bubble.querySelector('.cursor')?.remove(); bubble.textContent = '❌ ' + e.message; }
   finally {
     streaming = false; document.getElementById('send-btn').disabled = false;
+    // v2.0 大点 01：本轮「走哪条路 + 耗在哪」——放在输入区上方常驻一行
+    // （不能挂在气泡里：回答结束后 loadConvs/openConv 会用 DB 消息重渲染，气泡内容会被覆盖）
+    if (meta) {
+      // v2.0 大点 03：mode 多一档 chat（闲聊不检索）；检索失败要显式告知用户
+      const MODE_LABEL = { full:'全量检索', cache:'会话缓存命中', incremental:'增量补检', context:'上下文回答', chat:'闲聊（未检索）' };
+      const secs = ((meta.retrieval_ms || 0) / 1000).toFixed(1);
+      const el = document.getElementById('chat-meta');
+      const intentMs = meta.intent && meta.intent.ms ? ` · 意图 ${(meta.intent.ms/1000).toFixed(1)}s` : '';
+      const isChat = meta.mode === 'chat';
+      // 闲聊轮没有检索，"检索 0.8s" 会被误读成查了资料 —— 单独一套文案
+      if (el) el.textContent = isChat
+        ? `本轮：闲聊（未检索）${intentMs} · ${meta.precision} · 未检索知识库 · 来源 0 条`
+        : `本轮：${MODE_LABEL[meta.mode] || meta.mode}${intentMs} · ${meta.precision} · 检索 ${secs}s · 上下文 ${meta.context_chars} 字 · 来源 ${meta.sources} 条`
+          + (meta.degraded ? ' · Redis 不可用（退化模式）' : '')
+          + (meta.retrieval_degraded ? ' · 检索失败（通用回答，无出处）' : '');
+    }
     await loadConvs();
-    if (!curConvId) { const first = document.querySelector('.conv-item'); if (first && first.dataset.id) openConv(parseInt(first.dataset.id,10)); }
+    _preAuditCache = {};  // 有新回答 → 审计数据可能变化，清缓存
+    // 回答结束后按 DB 重渲染一次当前会话：引用标签、点赞踩、来源链接都只在 renderMsg(m) 里生成，
+    // 流式气泡只有纯文本。之前只在「首问」时重渲染，所以追问的回答永远缺 refs 与点赞踩。
+    if (!curConvId) {
+      const first = document.querySelector('.conv-item');
+      if (first && first.dataset.id) await openConv(parseInt(first.dataset.id, 10));
+    } else if (answer) {
+      await openConv(curConvId);
+    }
   }
 }
 
@@ -1602,30 +1781,329 @@ document.getElementById('notify-clear').onclick = async () => {
   try { await api('/api/notifications', { method:'DELETE' }); loadNotifies(); loadNotifyCount(); } catch(e){ alert(e.message); }
 };
 
-/* ============ PPT 工坊（P01-P07，D4） ============ */
+/* ============ PPT 工坊（v2.0 大点 02：PPT 生成 Agent + SSE 进度） ============ */
 let curPptId = null, curPptOutline = null;
+const pptTopicById = {};   // v2.0：下载时用主题做文件名（不把 topic 拼进 onclick 引号）
+const PPT_STAGES = { S0:'问题预处理', S1:'知识库检索', S2:'充分性判定', S3:'缺口补检', S4:'大纲策划', S5:'素材采集', S6:'逐页制作与自检', S7:'校验', S8:'落盘' };
+let pptAgentTaskId = null, pptAgentBusy = false;
+let pptAbort = null;            // 进行中 SSE 流的 AbortController（登出/换账号要中断）
+let pptSessionToken = null;     // 发起生成时的 token，用于校验"身份是否已变"
+const pptBlobUrls = [];         // 缩略图 blob URL，重置时回收
+
+function tplName(id) {
+  if (!id) return '-';
+  if (id === 'builtin_simple') return '内置简洁';
+  return id.includes('_') ? id.split('_').slice(1).join('_') : id;
+}
+function pptSpec() {
+  return {
+    topic: document.getElementById('ppt-topic').value.trim() || null,
+    requirements: document.getElementById('ppt-req').value.trim() || null,
+    pages: parseInt(document.getElementById('ppt-pages').value || '10', 10),
+    words_per_page: parseInt(document.getElementById('ppt-words').value || '90', 10),
+    allow_overflow: document.getElementById('ppt-overflow').value === '1',
+    template: document.getElementById('ppt-template').value || 'builtin_simple',
+  };
+}
+function pptHardReset() {
+  // 1) 中断进行中的 SSE 流
+  try { if (pptAbort) pptAbort.abort(); } catch (e) { /* 忽略 */ }
+  pptAbort = null;
+  pptAgentBusy = false;
+  pptAgentTaskId = null;
+  pptSessionToken = null;
+  // 2) 回收缩略图 blob（避免换账号后旧图仍在内存里可见）
+  while (pptBlobUrls.length) {
+    try { URL.revokeObjectURL(pptBlobUrls.pop()); } catch (e) { /* 忽略 */ }
+  }
+  // 3) 清空面板并隐藏（这是本 bug 的直接修复点：登出/换账号必须看不到上一个账号的产物）
+  const card = document.getElementById('ppt-progress-card');
+  if (!card) return;
+  card.style.display = 'none';
+  const log = document.getElementById('ppt-progress-log');
+  if (log) log.innerHTML = '';
+  const shots = document.getElementById('ppt-shots');
+  if (shots) shots.innerHTML = '';
+  const src = document.getElementById('ppt-sources');
+  if (src) { src.innerHTML = ''; src.textContent = ''; }
+  const dl = document.getElementById('ppt-dl-btn');
+  if (dl) { dl.style.display = 'none'; dl.onclick = null; }
+  const cl = document.getElementById('ppt-clean-btn');
+  if (cl) { cl.style.display = 'none'; cl.onclick = null; }
+  const title = document.getElementById('ppt-progress-title');
+  if (title) title.textContent = '生成中…';
+  const meta = document.getElementById('ppt-progress-meta');
+  if (meta) meta.textContent = '准备中…';
+  const bar = document.getElementById('ppt-progress-bar');
+  if (bar) bar.style.width = '0%';
+  const pct = document.getElementById('ppt-progress-pct');
+  if (pct) pct.textContent = '0%';
+}
+
+function pptCard(show) { document.getElementById('ppt-progress-card').style.display = show ? 'block' : 'none'; }
+function pptLog(msg, level) {
+  const box = document.getElementById('ppt-progress-log');
+  const color = level === 'warn' ? '#C0392B' : '#334';
+  box.innerHTML += `<div style="color:${color}">${esc(msg)}</div>`;
+  box.scrollTop = box.scrollHeight;
+}
+function pptSetProgress(ev) {
+  const pct = Math.max(0, Math.min(100, ev.progress || 0));
+  document.getElementById('ppt-progress-bar').style.width = pct + '%';
+  document.getElementById('ppt-progress-pct').textContent = pct + '%';
+  const stage = PPT_STAGES[ev.stage] || ev.stage || '';
+  const page = ev.page ? ` · 第 ${ev.page}/${ev.page_total} 页` : '';
+  document.getElementById('ppt-progress-meta').textContent = `${stage}${page}`;
+  if (ev.page && ev.shot) pptAddShot(ev.page, ev.shot, ev.verdict);
+}
+function pptAddShot(page, url, verdict) {
+  const grid = document.getElementById('ppt-shots');
+  const id = 'ppt-shot-' + page;
+  let cell = document.getElementById(id);
+  if (!cell) {
+    cell = document.createElement('div');
+    cell.id = id;
+    cell.style.cssText = 'border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff';
+    cell.innerHTML = `<img alt="第 ${page} 页" style="width:100%;display:block;background:#F1F4F8;min-height:90px">
+      <div class="cap" style="font-size:11px;color:var(--muted);padding:4px 6px">第 ${page} 页 · 渲染中…</div>`;
+    grid.appendChild(cell);
+  }
+  const flag = verdict === 'unfixed' ? '⚠ 自检未通过' : '✓ 已渲染';
+  cell.querySelector('.cap').textContent = `第 ${page} 页 · ${flag}`;
+  // <img src> 带不上 Authorization 头 → 用带鉴权的 fetch 取 blob 再挂到 img（大点 00 的同一套路）
+  api(url).then(r => r.blob()).then(blob => {
+    const img = cell.querySelector('img');
+    if (img && !img.dataset.loaded) {
+      const url = URL.createObjectURL(blob);
+      pptBlobUrls.push(url);
+      img.src = url;
+      img.dataset.loaded = '1';
+    }
+  }).catch(() => {
+    cell.querySelector('.cap').textContent = `第 ${page} 页 · 缩略图加载失败`;
+  });
+}
+async function pptShowSources(id) {
+  const box = document.getElementById('ppt-sources');
+  box.innerHTML = '';
+  try {
+    const d = await (await api(`/api/ppt/${id}/sources`)).json();
+    const items = d.items || [];
+    if (!items.length) { box.textContent = '本次未使用外部图片（纯图形版式）。'; return; }
+    const head = document.createElement('div');
+    head.style.cssText = 'font-weight:600;margin-bottom:4px';
+    head.textContent = `图片来源（${items[0].provider === 'unsplash' ? 'Unsplash' : (items[0].provider || '图库')}）· ${items.length} 张`;
+    box.appendChild(head);
+    items.forEach((it, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin:2px 0';
+      const a = document.createElement('a');
+      // 合规：摄影师全名 + Unsplash 均署名，并链接到原图页（页内含摄影师主页）
+      a.href = it.photo_url || it.source_url || 'https://unsplash.com/';
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = `${i + 1}. Photo by ${it.creator || 'Unsplash 摄影师'} on Unsplash`;
+      a.style.cssText = 'color:#1F3864;text-decoration:underline';
+      row.appendChild(a);
+      const meta = document.createElement('span');
+      meta.style.cssText = 'color:var(--muted)';
+      meta.textContent = ` ｜ ${it.license || ''}${it.license_version ? ' ' + it.license_version : ''}`;
+      row.appendChild(meta);
+      if (it.creator_url) {
+        const who = document.createElement('a');
+        who.href = it.creator_url; who.target = '_blank'; who.rel = 'noopener noreferrer';
+        who.textContent = '（摄影师主页）';
+        who.style.cssText = 'margin-left:6px;font-size:11px;color:#1F3864';
+        row.appendChild(who);
+      }
+      box.appendChild(row);
+    });
+    const foot = document.createElement('div');
+    foot.style.cssText = 'margin-top:4px;font-size:11px';
+    foot.innerHTML = '照片来自 <a href="https://unsplash.com/?utm_source=shudao_safety&utm_medium=referral" '
+      + 'target="_blank" rel="noopener noreferrer" style="color:#1F3864;text-decoration:underline">Unsplash</a>'
+      + '，遵循 Unsplash License；课件末页同样附署名与链接。';
+    box.appendChild(foot);
+  } catch (e) {
+    box.textContent = '图片来源加载失败：' + e.message;
+  }
+}
+
+async function openPptResult(id) {
+  pptCard(true);
+  pptReset();
+  document.getElementById('ppt-progress-title').textContent = '已完成任务：查看结果';
+  document.getElementById('ppt-progress-pct').textContent = '100%';
+  document.getElementById('ppt-progress-bar').style.width = '100%';
+  document.getElementById('ppt-progress-meta').textContent = '成品与逐页截图';
+  try {
+    const ws = await (await api(`/api/ppt/${id}/workspace`)).json();
+    (ws.shots || []).forEach((name, i) => pptAddShot(i + 1, `/api/ppt/${id}/assets/shots/${name}`, 'ok'));
+  } catch (e) { /* 缩略图失败不影响来源展示 */ }
+  await pptShowSources(id);
+  const dl = document.getElementById('ppt-dl-btn');
+  dl.style.display = 'inline-block';
+  dl.onclick = () => dlPpt(id);
+  document.getElementById('ppt-clean-btn').style.display = 'inline-block';
+  document.getElementById('ppt-clean-btn').onclick = () => cleanupPpt(id);
+}
+
+function pptReset() {
+  while (pptBlobUrls.length) {
+    try { URL.revokeObjectURL(pptBlobUrls.pop()); } catch (e) { /* 忽略 */ }
+  }
+  document.getElementById('ppt-progress-log').innerHTML = '';
+  document.getElementById('ppt-shots').innerHTML = '';
+  document.getElementById('ppt-sources').textContent = '';
+  document.getElementById('ppt-dl-btn').style.display = 'none';
+  document.getElementById('ppt-clean-btn').style.display = 'none';
+  pptSetProgress({ progress: 0, stage: '' });
+}
+async function genPptAgent(id, fromRow) {
+  if (pptAgentBusy) return alert('已有任务在生成，请等待完成');
+  let spec = pptSpec();
+  if (!spec.topic) {
+    // 从列表行发起：用任务原本的主题与参数
+    try {
+      const t = await (await api('/api/ppt/' + id)).json();
+      spec = { ...spec, topic: t.topic };
+    } catch (e) { return alert('读取任务失败：' + e.message); }
+  }
+  pptAgentBusy = true; pptAgentTaskId = id;
+  pptCard(true); pptReset();
+  document.getElementById('ppt-progress-title').textContent = `生成中：${spec.topic || ''}`;
+  pptLog('提交任务…');
+  pptAbort = new AbortController();
+  pptSessionToken = token;
+  try {
+    const resp = await api(`/api/ppt/${id}/agent`, {
+      method: 'POST', body: JSON.stringify(spec), signal: pptAbort.signal,
+    });
+    const reader = resp.body.getReader(); const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      if (token !== pptSessionToken) {        // 身份变了（换账号/被登出）→ 立刻停，别再往面板里写别人的东西
+        try { pptAbort.abort(); } catch (e) { /* 忽略 */ }
+        break;
+      }
+      const { done, value } = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, i); buffer = buffer.slice(i + 2);
+        const dl = frame.split('\n').find(l => l.startsWith('data:'));
+        if (!dl) continue;
+        const payload = dl.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        let obj; try { obj = JSON.parse(payload); } catch (e) { continue; }
+        if (obj.error) {
+          pptLog('❌ ' + obj.error, 'warn');
+          document.getElementById('ppt-progress-title').textContent = '生成失败';
+        } else if (obj.done) {
+          pptSetProgress(obj);
+          pptLog(`✅ ${obj.msg || '完成'}`);
+          document.getElementById('ppt-progress-title').textContent = `已完成：${obj.pages} 页 / ${obj.size_kb} KB / ${obj.duration_s}s`;
+          pptShowSources(id);
+          const dl = document.getElementById('ppt-dl-btn');
+          dl.style.display = 'inline-block';
+          dl.onclick = () => dlPpt(id);
+          document.getElementById('ppt-clean-btn').style.display = 'inline-block';
+          document.getElementById('ppt-clean-btn').onclick = () => cleanupPpt(id);
+        } else {
+          pptSetProgress(obj);
+          if (obj.msg) pptLog((obj.level === 'warn' ? '⚠ ' : '· ') + obj.msg, obj.level);
+        }
+      }
+    }
+  } catch (e) {
+    if (e && (e.name === 'AbortError' || /abort/i.test(String(e.message)))) {
+      // 主动中止（登出/换账号）：面板已被 pptHardReset 清空，这里静默退出
+      return;
+    }
+    pptLog('❌ ' + e.message, 'warn');
+    document.getElementById('ppt-progress-title').textContent = '生成失败';
+  } finally {
+    pptAbort = null;
+    pptAgentBusy = false;
+    loadPptTasks();
+  }
+}
+async function pptRestoreProgress(id) {
+  try {
+    const d = await (await api(`/api/ppt/${id}/progress`)).json();
+    const el = document.querySelector(`[data-ppt-prog="${id}"]`);
+    if (el) el.textContent = ` · ${d.progress || 0}%${d.msg ? ' ' + d.msg : ''}`;
+    if (d.status === '生成中') {
+      pptCard(true);
+      document.getElementById('ppt-progress-title').textContent = '生成中（后台进行，刷新后自动恢复）';
+      pptSetProgress(d);
+    }
+  } catch (e) { /* 忽略 */ }
+}
+async function cleanupPpt(id) {
+  if (!confirm('清理本次生成的工作区？\n（会删除下载的图片、逐页截图、中间大纲与日志；成品 .pptx 保留）')) return;
+  try {
+    const d = await (await api(`/api/ppt/${id}/workspace?keep_out=true`, { method: 'DELETE' })).json();
+    alert(`已清理 ${d.files || 0} 个文件；保留：${(d.kept || []).join('、') || '无'}`);
+    pptReset(); pptCard(false);
+  } catch (e) { alert('清理失败：' + e.message); }
+}
+async function loadPptCapabilities() {
+  try {
+    const d = await (await api('/api/ppt/capabilities')).json();
+    const el = document.getElementById('ppt-cap-hint');
+    const bits = [];
+    bits.push(d.agent ? '本地 Agent 可用' : 'Agent 已关闭');
+    if (d.officecli) bits.push('编辑器就绪');
+    if (d.vision) bits.push(`视觉自检：${d.vision_model || '已配置'}`);
+    if (!d.images) bits.push('配图已关闭');
+    bits.push(`最多 ${d.page_limit} 页`);
+    el.textContent = bits.join(' · ');
+  } catch (e) { /* 忽略 */ }
+}
 async function loadPptTasks() {
   try {
     const r = await api('/api/ppt?page=1&page_size=20'); const d = await r.json();
     const tbody = document.getElementById('ppt-tbody'); tbody.innerHTML = '';
     document.getElementById('ppt-empty').style.display = (d.items||[]).length ? 'none' : 'block';
     (d.items||[]).forEach(t => {
+      pptTopicById[t.id] = t.topic;
       const fileOk = t.status === '已完成' && t.file_path;
       // file_path 为 Windows 相对路径（ppt_files\xxx.pptx），需兼容 \ 与 / 两种分隔符取文件名
       const fname = (t.file_path || '').replace(/\\/g, '/').split('/').pop();
-      const dl = fileOk ? `<a class="btn btn-outline btn-sm" href="/ppt-files/${encodeURIComponent(fname)}" download>下载</a>` : '';
+      // v2.0 大点 00：产物改为带鉴权下载（/api/ppt/{id}/download），不再拼 /ppt-files 静态地址
+      const dl = fileOk ? `<button class="btn btn-outline btn-sm" onclick="dlPpt(${t.id})">下载</button>` : '';
       tbody.innerHTML += `<tr>
         <td style="font-weight:600">${esc(t.topic)}</td>
-        <td>${esc({business:'商务',simple:'简约',tech:'科技'}[t.template] || t.template)}</td>
-        <td><span class="badge ${t.status === '已完成' ? '已闭环' : t.status === '失败' ? '已驳回' : '处理中'}">${t.status}</span></td>
+        <td>${esc(tplName(t.template))}</td>
+        <td><span class="badge ${t.status === '已完成' ? '已闭环' : t.status === '失败' ? '已驳回' : '处理中'}">${t.status}</span>
+            <span style="font-size:12px;color:var(--muted)" data-ppt-prog="${t.id}">${t.status === '生成中' ? ' · --' : ''}</span></td>
         <td style="font-size:12px;color:var(--muted)">${(t.created_at||'').slice(0,16)}</td>
         <td><button class="btn btn-outline btn-sm" onclick="openPptOutline(${t.id})">${t.outline ? '编辑大纲' : '生成大纲'}</button>
-            ${t.status === '草稿' || t.status === '失败' ? `<button class="btn btn-primary btn-sm" onclick="genPpt(${t.id})">🚀 生成</button>` : ''}
+            ${t.status === '草稿' || t.status === '失败' ? `<button class="btn btn-primary btn-sm" onclick="genPptAgent(${t.id},true)">🚀 生成 PPT</button>` : ''}
             ${dl}
+            ${t.status === '已完成' ? `<button class="btn btn-outline btn-sm" onclick="openPptResult(${t.id})">来源</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick="cleanupPpt(${t.id})">清理</button>
             <button class="btn btn-outline btn-sm" onclick="delPpt(${t.id})" style="color:var(--st-pending)">删除</button></td>
       </tr>`;
     });
+    // 生成中的任务：拉一次进度，刷新页面也能看到当前阶段
+    (d.items || []).filter(t => t.status === '生成中').forEach(t => pptRestoreProgress(t.id));
   } catch(e){ alert('PPT 任务加载失败：' + e.message); }
+}
+// v2.0 大点 00：PPT 下载走带鉴权的接口（<a href> 无法携带 Authorization 头，故用 fetch + Blob）
+async function dlPpt(id) {
+  try {
+    const r = await api(`/api/ppt/${id}/download`);
+    if (!r.ok) throw new Error('下载失败');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (pptTopicById[id] || 'PPT') + '.pptx';   // 用主题作文件名，不暴露内部编号
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) { alert('下载失败：' + e.message); }
 }
 let pptMdFile = null;  // 用户选择的 .md 文件（领导优化：按文档生成大纲）
 
@@ -1690,7 +2168,30 @@ document.getElementById('ppt-create').onclick = async () => {
     document.getElementById('ppt-md-name').textContent = '';
     loadPptTasks();
   } catch(e){ alert('创建失败：' + e.message); }
-  btn.disabled = false; btn.textContent = '🤖 生成大纲';
+  btn.disabled = false; btn.textContent = '🤖 只生成大纲';
+};
+// 🚀 生成 PPT（Agent）：先建任务，再流式生成
+document.getElementById('ppt-agent-create').onclick = async () => {
+  const topic = document.getElementById('ppt-topic').value.trim();
+  const md = pptMdFile;
+  if (!topic && !md) return alert('请输入讲座主题，或先选择 .md 文件');
+  const btn = document.getElementById('ppt-agent-create');
+  btn.disabled = true; btn.textContent = '📝 创建任务中…';
+  try {
+    const body = { topic: topic || md.name.replace(/\.md$/i, ''), template: document.getElementById('ppt-template').value };
+    if (md) {
+      const text = await md.text();
+      if (text.trim().length < 10) throw new Error('文档内容过短（至少 10 字）');
+      body.md_content = text;
+    }
+    const t = await (await api('/api/ppt', { method: 'POST', body: JSON.stringify(body) })).json();
+    pptMdFile = null; document.getElementById('ppt-md-file').value = ''; document.getElementById('ppt-md-name').textContent = '';
+    btn.textContent = '🚀 生成 PPT（Agent）';
+    await genPptAgent(t.id, false);
+  } catch (e) {
+    alert('创建失败：' + e.message);
+    btn.disabled = false; btn.textContent = '🚀 生成 PPT（Agent）';
+  }
 };
 function openPptOutline(id) {
   curPptId = id;
@@ -1722,7 +2223,7 @@ async function genPpt(id, fromOutline) {
     catch(e){ return alert('大纲 JSON 格式错误：' + e.message); }
     try { await api('/api/ppt/' + id + '/outline', { method:'PUT', body: JSON.stringify({ outline }) }); } catch(e){}
   }
-  if (!confirm('开始生成 PPT？（百度 API 约 20-60s，免费额度每日 10 次）')) return;
+  if (!confirm('快速生成：只用本地渲染器把大纲排成 PPT（无配图、无逐页自检）。\n要走完整 Agent（配图 + 视觉自检 + 进度）请点「🚀 生成 PPT」。继续？')) return;
   try {
     const r = await api('/api/ppt/' + id + '/generate', { method:'POST', body: JSON.stringify({}) });
     const d = await r.json();
@@ -1848,11 +2349,23 @@ async function exportExam(paperId) {
   try {
     const r = await api(`/api/exam/papers/${paperId}/export`, { method:'POST', body: JSON.stringify({ format: fmt }) });
     const d = await r.json();
-    // download 写真实文件名（带扩展名），避免浏览器按 MIME 把 md 当成 txt
-    const name = (d.file_url || '').split('/').pop() || `试卷.${fmt}`;
+    // v2.0 大点 00：导出文件只能通过带鉴权的下载接口取（<a href> 无法携带 Authorization 头）
+    const r2 = await api(d.file_url);
+    if (!r2.ok) throw new Error('下载失败');
+    const blob = await r2.blob();
+    // 文件名取服务端 Content-Disposition（试卷标题.扩展名），避免 md 被浏览器当成 txt
+    let name = `试卷.${d.format || fmt}`;
+    const cd = r2.headers.get('content-disposition') || '';
+    const part = cd.split("''")[1] || cd.split('filename=')[1] || '';
+    if (part) {
+      try { name = decodeURIComponent(part.split(';')[0].replace(/"/g, '')); }
+      catch (e) { name = part.split(';')[0].replace(/"/g, ''); }
+    }
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = d.file_url; a.download = name;
+    a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch(e) { alert('导出失败：' + e.message); }
   return false;
 }
@@ -1950,6 +2463,22 @@ async function openKbContribDetail(id) {
       (c.chunk_count ? ` ｜ 入库块数：${c.chunk_count}` : '') +
       (c.review_note ? ` ｜ 审核意见：${c.review_note}` : '');
     document.getElementById('kc-detail-content').innerHTML = mdRender(c.content);
+    // v2.0 大点 04：原件下载 + 转换方式 + Agent 来源
+    const extra = [];
+    if (c.file_path) {
+      extra.push(`<a class="btn btn-outline btn-sm" href="javascript:void(0)" onclick="kcDownloadOrigin(${c.id})">📥 下载原件</a>`);
+    }
+    if (c.convert_by) extra.push(`<span>转换：${esc(c.convert_by)}</span>`);
+    if (c.md_path) extra.push(`<span>落盘：${esc(c.md_path)}</span>`);
+    if ((c.source_kind || 'user') === 'agent') extra.push(`<span style="color:#A93226;font-weight:600">Agent 贡献</span>`);
+    let urls = [];
+    try { urls = c.origin_urls ? JSON.parse(c.origin_urls) : []; } catch(e) { urls = []; }
+    if (urls.length) {
+      extra.push(`<span>来源 ${urls.length} 篇：</span>` + urls.slice(0, 5).map(u =>
+        `<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--primary)">${esc((u||'').slice(0, 48))}</a>`
+      ).join(' '));
+    }
+    document.getElementById('kc-detail-extra').innerHTML = extra.join(' ｜ ');
     document.getElementById('kc-preview-box').innerHTML = '';
     document.getElementById('kc-review-note').value = '';
     // 管理员 + 待审核 才显示审核区
@@ -1998,13 +2527,79 @@ async function doKcReview(approved) {
   if (!confirm(approved ? '确认审核通过并写入向量知识库？（增量写入，不重建）' : '确认驳回该贡献？')) return;
   try {
     await api(`/api/knowledge-contrib/${curKcId}/review`, { method:'POST', body: JSON.stringify({ approved, note: note || null }) });
-    alert(approved ? '✅ 已通过并入库' : '已驳回');
+    alert(approved ? '✅ 已通过：文件已落 knowledge_src 四类并入库，首页政策文件与问答引用立即可见' : '已驳回');
     closeModal('modal-kc-detail');
     loadKbContribs();
   } catch(e) { alert('审核失败：' + e.message); }
 }
 document.getElementById('kc-approve').onclick = () => doKcReview(true);
 document.getElementById('kc-reject').onclick = () => doKcReview(false);
+
+/* ============ v2.0 大点 04：原件下载 + Agent 方法论 ============ */
+async function kcDownloadOrigin(id) {
+  try {
+    const r = await api(`/api/knowledge-contrib/${id}/file`);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `贡献${id}_原件`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  } catch (e) { alert('下载失败：' + e.message); }
+}
+
+async function kcLoadAgentDocs() {
+  const card = document.getElementById('kc-agent-docs');
+  if (!card) return;
+  const isAdmin = me && me.role === 'admin';
+  card.classList.toggle('hidden', !isAdmin);
+  if (!isAdmin) return;
+  try {
+    const [m, c, v] = await Promise.all([
+      api('/api/kb-agent-docs?name=Methodology.md').then(r => r.json()),
+      api('/api/kb-agent-docs?name=cases.md').then(r => r.json()),
+      api('/api/kb-agent-docs/version').then(r => r.json()),
+    ]);
+    document.getElementById('kc-md-content').value = m.content || '';
+    document.getElementById('kc-cases-content').value = c.content || '';
+    document.getElementById('kc-md-version').textContent =
+      `版本 ${(v.version || 'none')}${m.exists === false ? '（尚未创建，当前显示模板）' : ''}`;
+  } catch (e) { /* 静默：方法论是辅助功能 */ }
+}
+
+document.getElementById('kc-md-save').onclick = async () => {
+  try {
+    await api('/api/kb-agent-docs', { method:'PUT', body: JSON.stringify({
+      name: 'Methodology.md', content: document.getElementById('kc-md-content').value }) });
+    alert('方法论已保存（旧版留 .bak）'); kcLoadAgentDocs();
+  } catch (e) { alert('保存失败：' + e.message); }
+};
+document.getElementById('kc-cases-save').onclick = async () => {
+  try {
+    await api('/api/kb-agent-docs', { method:'PUT', body: JSON.stringify({
+      name: 'cases.md', content: document.getElementById('kc-cases-content').value }) });
+    alert('案例库已保存'); kcLoadAgentDocs();
+  } catch (e) { alert('保存失败：' + e.message); }
+};
+document.getElementById('kc-md-gen').onclick = async (ev) => {
+  const btn = ev.currentTarget; btn.disabled = true;
+  try {
+    const r = await api('/api/kb-agent-docs/regenerate', { method:'POST', body: '{}' });
+    const d = await r.json();
+    alert(`已生成方法论（${d.chars} 字，版本 ${d.version}）`); kcLoadAgentDocs();
+  } catch (e) { alert('生成失败：' + e.message); }
+  finally { btn.disabled = false; }
+};
+document.getElementById('kc-md-reload').onclick = () => kcLoadAgentDocs();
+document.getElementById('kc-runs-open').onclick = async () => {
+  const box = document.getElementById('kc-runs-box');
+  try {
+    const r = await api('/api/knowledge-contrib/agent-runs?limit=10'); const d = await r.json();
+    box.innerHTML = (d.items || []).map(x =>
+      `<div>#${x.id} · ${esc(x.status)} · ${(x.created_at || '').slice(0, 16)} · 贡献 ${x.contrib_id || '—'} · ${esc((x.gap_question || '').slice(0, 40))}</div>`
+    ).join('') || '暂无采集记录';
+  } catch (e) { box.textContent = '读取失败：' + e.message; }
+};
 
 /* ============ 个人主页（优化丰富期） ============ */
 let curHzTab = 'mine';
@@ -2239,6 +2834,15 @@ function switchTab(t) {
   document.getElementById('register-fields').classList.toggle('hidden', t!=='register');
 }
 document.getElementById('login-btn').onclick = doLogin;
+
+// 隔离：同一浏览器多标签共用 localStorage 的 token；别的标签换账号时本标签必须知道，
+// 否则会出现"界面是 A、数据是 B"的错位（本 bug 的第二种触发路径）
+window.addEventListener('storage', (ev) => {
+  if (ev.key !== 'sd_token') return;
+  if ((ev.newValue || '') === token) return;
+  try { pptHardReset(); } catch (e) { /* 忽略 */ }
+  location.reload();
+});
 document.getElementById('reg-btn').onclick = doRegister;
 document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
 document.getElementById('logout-btn').onclick = showLogin;
@@ -2246,6 +2850,13 @@ document.getElementById('c-new').onclick = () => { curConvId = null;
   document.querySelectorAll('.conv-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('chat-area').innerHTML = '<div class="empty-tip">👋 新会话，开始提问吧～</div>'; };
 document.getElementById('send-btn').onclick = send;
+// v2.0 大点 01：「高精度检索」开关偏好持久化（默认关 = fp16 快速模式）
+(() => {
+  const hp = document.getElementById('hp-check');
+  if (!hp) return;
+  hp.checked = localStorage.getItem('sd_high_precision') === '1';
+  hp.addEventListener('change', () => localStorage.setItem('sd_high_precision', hp.checked ? '1' : '0'));
+})();
 document.getElementById('question-input').addEventListener('keydown', e => { if (e.key==='Enter') send(); });
 document.getElementById('f-search').onclick = () => { hazPage = 1; loadHazards(); };
 document.getElementById('f-mine').onclick = () => { hazQuery.mine = hazQuery.mine ? 0 : 1; hazPage = 1; loadHazards(); syncMineBtn(); };
@@ -2263,6 +2874,7 @@ if (token) {
   (async () => { try { const r = await api('/api/auth/me'); me = await r.json();
     document.getElementById('user-name').textContent = me.real_name || me.username;
     document.getElementById('user-role').textContent = {admin:'管理员',safety_officer:'安全员',employee:'普通员工'}[me.role] || me.role;
+    pptHardReset();        // 换账号后必须是干净会话（进度卡/缩略图/来源都不该留）
     applyUserAvatar();
     enterApp(); } catch(e){ showLogin(); } })();
 } else showLogin();

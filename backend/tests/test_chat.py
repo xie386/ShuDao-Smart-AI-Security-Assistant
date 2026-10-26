@@ -6,10 +6,23 @@
 """
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.ai.llm_client import llm_client
 from src.main import app
+from src.routers import chat as chat_router
+
+
+@pytest.fixture(autouse=True)
+def _fast_chat(monkeypatch):
+    """本文件只验证 SSE 格式与落库：不连 Chroma、不走真模型。
+
+    v2.0 大点 03 起 Agent 会先做意图判定、再走 Agent 生成；单测里两条外部依赖都要掐掉，
+    否则用例会随网络/向量库状态飘（曾出现「Agent 真答了 → 断言假流文本失败」）。
+    """
+    monkeypatch.setattr(chat_router.settings, "AGENT_ENABLED", False)
+    monkeypatch.setattr(chat_router, "retrieve_queries", lambda *_a, **_kw: [])
 
 
 def _register(client: TestClient) -> dict:

@@ -65,6 +65,14 @@ class LLMClient:
             )
         return self._chain
 
+    @property
+    def primary_chat_model(self) -> ChatOpenAI:
+        """裸主模型（v2.0 大点 01：`create_agent` 需要可 bind_tools 的 ChatModel，
+        `with_fallbacks` 返回的是 Runnable 包装，不能直接当 model 传入）。
+        Agent 路径的降级由调用方兜底：Agent 异常 → 回落 `chat_stream`（含 with_fallbacks）。
+        """
+        return self._primary_llm()
+
     # ---- 非流式 ----
 
     def chat(self, messages: list[dict], temperature: float | None = None) -> str:

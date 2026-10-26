@@ -82,15 +82,19 @@ def clean_text(text: str) -> str:
     return "\n".join(dedup)
 
 
-def quality_check(text: str) -> dict:
-    """判定标准 §5 在线校验。返回 {ok, reasons, chars, repeat_ratio, garble_ratio}。
+def quality_check(text: str, min_chars: int | None = None) -> dict:
+    """判定标准 §5 在线校验。返回 {ok, reasons, chars, short, repeat_ratio, garble_ratio}。
+
+    `min_chars`：本次校验的最小有效字数（v2.0 大点 04 起贡献路径传 `KB_CONTRIB_MIN_CHARS=1000`）；
+    不传则用历史常量 `_MIN_HARD=300`（官方采集链路与既有测试保持原行为）。
 
     ok=False 时 reasons 给出具体未达标项（review 接口据此拒绝入库并提示管理员）。
     """
     reasons: list[str] = []
     chars = len(text)
-    if chars < _MIN_HARD:
-        reasons.append(f"有效正文仅 {chars} 字（低于碎片阈值 {_MIN_HARD} 字）")
+    hard = int(min_chars or _MIN_HARD)
+    if chars < hard:
+        reasons.append(f"有效正文仅 {chars} 字（低于碎片阈值 {hard} 字）")
 
     # HTML 残留（清洗后仍有成对标签 = 剥离失败）
     if re.search(r"<[a-zA-Z/][^>]{0,120}>", text):
@@ -117,7 +121,7 @@ def quality_check(text: str) -> dict:
         "ok": not reasons,
         "reasons": reasons,
         "chars": chars,
-        "short": _MIN_HARD <= chars < _MIN_NORMAL,  # 偏短但允许（标注供审核员参考）
+        "short": hard <= chars < _MIN_NORMAL,  # 偏短但允许（标注供审核员参考）
         "repeat_ratio": round(repeat_ratio, 3),
         "garble_ratio": round(garble_ratio, 4),
     }
