@@ -16,6 +16,15 @@ class HazardCreate(BaseModel):
     hazard_type: Optional[str] = Field(default=None, max_length=64, description="隐患类型")
     location: Optional[str] = Field(default=None, max_length=128, description="位置")
     image_urls: Optional[list[str]] = Field(default=None, description="上传接口返回的图片 url 列表")
+    # ---- v2.0 大点 06：AI 识别结果随上报一起提交（裁定 4/5） ----
+    annotated_image: Optional[str] = Field(
+        default=None, max_length=255,
+        description="/api/vision/annotate 返回的标注图地址（服务端已烘焙）",
+    )
+    ai_analysis: Optional[dict] = Field(
+        default=None,
+        description="识别结果（hazards 含 location/level/category/suggestion/refs/grounded），落 hazard_ai_analysis",
+    )
 
 
 class AssignRequest(BaseModel):
@@ -67,6 +76,9 @@ class HazardOut(BaseModel):
     rectify_images: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    # ---- v2.0 大点 06（裁定 7）：列表/详情直接给标注图，前端免二次请求 ----
+    annotated_url: Optional[str] = Field(default=None, description="标注图地址（无 AI 分析时为空）")
+    ai_hazards: Optional[list] = Field(default=None, description="AI 隐患条目（详情返回；含建议/引用）")
 
 
 class HazardDetailOut(HazardOut):

@@ -112,6 +112,7 @@ team/
 | 1️⃣-6 | `src/models/conversation.py` | AI 会话模型：`Conversation` + `ChatMessage`。注意 `chat_messages.refs` 字段（A06 引用来源 JSON）。思考：为什么会话历史存 MySQL 而不是 Redis？（持久化，刷新不丢；多轮拼接 {history} 实现 ≥5 轮上下文） |
 | 1️⃣-7 | `src/models/ppt_task.py` | PPT 任务模型：状态机（草稿→生成中→已完成/失败）+ `outline`（大纲 JSON）+ `file_path`。思考：这个模型是后面哪些模块的「模板」？（答：exam_papers 就是照它设计的） |
 | 1️⃣-8 | `src/models/exam_paper.py` + `src/models/knowledge_contrib.py` | 考试工坊 / 知识贡献模型。注意：exam_content 存结构化 JSON；knowledge_contrib 有 `file_intro`（简介）/ `file_path`（文件路径）/ `content`（解析全文）+ `KnowledgeContribTimeline`。思考：为什么 knowledge_contrib 也要 timeline 表？（提交→审核→入库的过程要留痕，同 hazard_timeline 范式） |
+| 1️⃣-9 | `scripts/migrate_06_ai_analysis.py` | **v2.0 大点 06 · 新表迁移**（幂等，默认 dry-run）：只建 `hazard_ai_analysis`，**不动 `schema.sql` 既有表**。思考：为什么 AI 分析要单开一张表，而不是往 `image_urls` 里塞一个 URL、或者给 `hazards` 加列？（URL 存不下坐标；改主表违反既有约束；单表还能留多版本供复核与训练集） |
 
 > 💡 学习心法：8 个模型文件 = **10 张表的 ORM 映射**。读完你应该能画出「users → 各业务表」的外键关系图（reporter_id / assignee_id / contributor_id / user_id 都是指向 users.id 的 FK）。
 
@@ -125,6 +126,7 @@ team/
 | 2️⃣-2 | `src/core/db.py` | SQLAlchemy 2.x 引擎 + `get_db` 依赖。注意 docstring 强调「**不自动建表**」。思考：为什么 FastAPI 用 `Depends(get_db)` 而不是全局 Session？（请求级隔离，用完即关，防连接泄漏） |
 | 2️⃣-3 | `src/core/redis_client.py` | Redis 连接池。注意端口 **6380**（非默认 6379）、`protocol=2`（兼容 Redis<6 的 RESP2）、`ping_redis()` 优雅探测（服务未启动不崩）。**v2.0 大点 05 起**：`redis_client` 改成**惰性代理** `_LazyRedis`（首次命令才建池，这样"运行时覆写 REDIS_URL"才生效），并新增 `reset()` 与**首次连接自愈**（服务端没设密码时自动去掉 auth）。思考：Redis 挂了系统还能用吗？（能——通知 push 优雅降级，见 notification_service）为什么客户端要惰性而不是 import 时建池？ |
 | 2️⃣-7 | `src/core/redis_boot.py` | **v2.0 大点 05 · 内置 Redis 启动器**（268 行）：`lifespan` 里 `ensure()` 三态 —— **复用外部**（双探针 `as_is`/`no_auth`）→ **拉起内置**（`tools/redis/` 最小集，`--bind 127.0.0.1 --save "" --appendonly no --maxmemory 256mb`）→ **降级**；`stop()` 只结束自己拉起的 pid，并用 Windows **Job Object**（`KILL_ON_JOB_CLOSE`）保证硬杀父进程时子进程一起回收。思考：为什么必须先探测再拉起？（复用用户自己的实例，且第二次启动不能双启）为什么"带密码 URL + 无密码实例"需要两个探针？（客户端带 `AUTH` 打无密码实例会直接报错，第二个后端会误判"外部不可用"） |
+| 2️⃣-8 | `src/core/box_style.py` | **v2.0 大点 06 · 框样式唯一事实源**（裁定 1）：**色相 = 类别**（人 H212 / 物 H32 / 环境 H145 / 管理 H268）、**明度 = 等级**（重大 38% → 轻微 64%，S 固定 0.62）、线宽 12/9/7/6 px、填充 25%、聚焦 50%、淡化 7%、字号 = 图宽/64。前端不另写色板，改走 `GET /api/vision/box-style`。思考：为什么用「类别定色相 + 等级定明度」而不是四个固定色？（4 类 × 4 级 = 16 种组合，固定色必然撞色；色相/明度两维刚好正交）为什么字号要按图宽算？（旧版 20 px 固定，在 4096 图上只占 0.49%，预览时等于看不见） |
 | 2️⃣-4 | `src/core/security.py` | bcrypt 密码哈希 + JWT 签发/校验。注意 docstring 强调「**不引入 passlib**」（bcrypt>=5.0 与 passlib 兼容问题）。思考：为什么密码要哈希而不是加密？（哈希不可逆，库泄露不还原明文）JWT 的 SECRET_KEY 在哪配置？ |
 | 2️⃣-5 | `src/core/paths.py` | **v2.0 大点 02 · 账号沙箱路径的唯一事实源**（153 行，仿 deep_search_pro 的归口模式）：`user_root / task_root / task_dir / out_path / log_path / cleanup_task` + 三个安全函数（`safe_name` 只取 basename、`safe_join` 根内校验、`is_within` 双路径判断）。**只给路径、不建目录**；目录名只由整数 id 拼（`u17/t11`），天然免疫 `..` 与盘符注入。思考：为什么账号目录不用 username？（可改名 → 目录失联）为什么"只给路径不建目录"？（避免读的时候顺手建目录这种隐形副作用） |
 | 2️⃣-6 | `src/core/__init__.py` | 空包标记。思考：为什么 Python 包都要有 `__init__.py`？（标记目录为包，可被 import） |
@@ -158,6 +160,7 @@ team/
 | 3️⃣-17 | `src/ai/ppt_tools.py` | **v2.0 大点 02 · 工具实现**：OfficeCLI 薄封装（create/batch/screenshot/issues/validate/**release_file**）、多图源检索与流式下载（`current_provider()`：Unsplash 默认 / Openverse 备选；重试 1 次、体积上限、等比缩放在 ppt_layout）、`kb_search`（复用 01 的 RAG）、沙箱只读文件。两个实测坑：`batch` 走 `--input` 临时文件而不是 stdin（Windows 编码）；OfficeCLI `close` 后仍有几百毫秒**锁窗**，不 `release_file()` 就删不掉文件。思考：为什么图片失败一律返回空列表而不抛异常？（一张图不能拖垮整单 —— 裁定 6） |
 | 3️⃣-18 | `src/ai/vision_agent.py` | **v2.0 大点 02 · 审图（多模态独立段）**：`PPT_VISION_*` 默认 AGNES，只给它看截图、只问四类版式问题（溢出/遮挡/对比度/缺失），输出结构化 `{ok, problems, fix_hints}`。关键坑：它先吐 `reasoning_content` 再吐 `content`，`max_tokens` 给小了 `content` 直接为空（实测 40 → 空）→ 默认 800 且只读 `content`。失败/超时一律 `ok=True + skipped`。思考：为什么审图不能当成必需步骤？（自检是加分项，不能变成故障点） |
 | 3️⃣-21 | `src/ai/agent_scout.py` | **v2.0 大点 04 · Agent 网搜采集**（330 行）：回答发现"知识库缺料"后**异步**启动，Playwright 按方法论搜集 → LLM 总结成 md → 以 `knowledge_scout` 身份提交待审。三道闸：`url_allowed()`（禁 file/localhost/内网/保留 IP，防 SSRF）、`_host_quality()`（百科/文库/问答不采，gov/org/edu 优先）、限额（站点 3/页 8/总 8MB/600s）。**收官前质量加固（v1.1–v1.2）**：搜索源配置化 `KB_SCOUT_ENGINES`（默认 360→搜狗→cn.bing，百度对无头浏览器弹验证码不用）、搜索页/文库不当来源、`_is_relevant()`（关键词命中 + 条款级证据）、`_knowledge_quality()` 闸门（≥1000 字 / ≥5 条 / **正文零链接** / 来源 ≤3 条 URL / 无"缺口·待补录"叙事）、`_strip_links()` 去链接、材料偏少自动补采一轮。思考：为什么采集必须异步且必须人审？为什么方法论只注入这个工具、不进主问答 prompt？为什么"正文零链接"要写进闸门而不是只靠提示词？ |
+| 3️⃣-22 | `src/ai/hazard_agent.py` | **v2.0 大点 06 · 隐患识别 Agent（B 混合编排，裁定 8）**：拆成 `retrieve_all`（并发 RAG，8s/条）→ `fill_gap`（缺口**合并成一次**网搜，复用 04 的 `run_sync`，同时提交知识文件审核）→ `synthesize`（一次 LLM 汇总每条建议 + 引用）。关键：缺口阈值 **0.65**（实测有料 0.88~0.92、无料 0.54~0.61）、引用必须**能对上证据**（模型编的 doc/host 直接丢）、`grounded=false` 就不写建议只标「暂无依据」。思考：为什么不让 LLM 自己决定「查几次/改写几次查询」？（步骤本身确定，交给模型只会抖动；Agent 的实质是有工具、能补料、有边界）为什么缺口要合并成一次网搜？（4 条缺口各搜一次就是 4 分钟） |
 | 3️⃣-20 | `src/ai/intent.py` | **v2.0 大点 03 · 意图识别**（178 行）：回答前先判「闲聊 / 知识问答」，闲聊跳过预处理与检索直答。要点：**纯 LLM 单次判定**（提示词 `chat_intent`，不做关键词短路）、**判定客户端独立**（构造级 8s 超时 + `max_retries=0`；`llm_client.chat` 的 60s 超时对闲聊首字是灾难）、**失败一律退回 knowledge 并记 `degraded`**（误判方向代价不对称：知识题被判闲聊=无依据作答）、**带上一轮**（`last_round_hint`）否则「第一问」这类指代追问会被判成闲聊。思考：为什么超时不能靠 `model_copy(request_timeout=…)`？（实测不生效，请求照常成功）为什么判定器"永不抛异常"是硬约束？（它跑在 `event_stream()` 第一行，抛了就是整轮 500） |
 | 3️⃣-19 | `src/ai/ppt_llm.py` | **可选直连 PPT LLM 的抽象位**（裁定 2）：`PptLlmProvider` 协议 + 空注册表 + `capabilities()`。百度实现已删（裁定 1），这里只留"以后接付费 PPT LLM 不用改业务代码"的位置。思考：为什么留一个空注册表也值得？（成本近零，却保住了产品形态上的"两种工作方式"） |
 
@@ -187,6 +190,7 @@ team/
 | 4️⃣-16 | `src/services/kb_convert.py` | **v2.0 大点 04 · 贡献文件 → Markdown**（300 行）：md 直通 / txt 补标题 / html(markdownify) / docx+pdf 走 **MinerU**（`mineru-kit`，独立 venv，子进程）/ 兜底（python-docx 段落+表格交错、pymupdf 字号分级+find_tables）。坑：PDF 默认只解析前 10 页（必须 `--pages all`）；MinerU 结果异常短要回退兜底。思考：为什么 MinerU 绝不能 pip 装进后端？（会把 starlette 升到 1.10） |
 | 4️⃣-17 | `src/services/contrib_store.py` | **v2.0 大点 04 · 落盘与回滚**（243 行）：文件名归一化 → **双重查重**（同名文件 + 标题，含 DB 已入库）→ 写 `.tmp_*` → `upsert_file` → rename → 更新 DB；失败删临时文件并回滚已写入的块。思考：为什么查重必须在"转 md 之后"？为什么 rename 必须放在入库成功之后？ |
 | 4️⃣-18 | `src/services/agent_docs.py` | **v2.0 大点 04 · Agent 方法论**（165 行）：`team/Methodology/{Methodology.md, cases.md}` 读写、`.bak` 与版本号（sha1 前 8 位）、`regenerate()`（读案例 → `methodology_writer` → 覆盖，<200 字拒绝写入）；**新增 `update_case(id, verdict, reason)`**——审核通过/驳回后把 `#id` 那行的结论从「已提交待审」改写为「审核通过/驳回 #N：理由」，找不到该行则补记（案例库不再是"永远待审核"）。实体文件 gitignore，只推 `.example`。思考：方法论为什么要版本号？（`agent_runs` 可追溯"当时用的哪版"）为什么管理员的驳回理由要写进案例库，而不是只存数据库？ |
+| 4️⃣-19 | `src/services/hazard_analysis_service.py` | **v2.0 大点 06 · 识别编排与落库**：`to_original()` 把 1024 缩放坐标还原成原图坐标（前端 SVG 与后端烘焙共用一套）、`render_annotated()` 烘焙 JPG q90、`persist()`/`load_latest()` 读写 `hazard_ai_analysis`、同图同场景 10 分钟 Redis 缓存。思考：为什么坐标要在入口就归一化，而不是各自记着 `_scale`？（少一个可能传错的参数，前端 `viewBox` 直接等于图片宽高）为什么缓存键带 `scene`？（同一张图不同描述会得到不同隐患判断） |
 | 4️⃣-14 | `src/services/preprocess_audit.py` | **v2.0 大点 01 · 预处理审计（A08）**：把会话每轮「原问题 → 预处理结果」配对成结构化数据，供 CLI（`scripts/show_preprocessed.py`）与 HTTP（`GET /api/conversations/{id}/preprocess-audit`）**共用同一份实现**。要点：`build_rounds()` 是纯函数（可单测）；尾部只有提问没回答时也返回一轮（生成失败也能审计）；**v2.0 大点 03 起**每轮还带 `intent`，闲聊轮 `preprocessed=None` 但照常成轮。思考：为什么把「脚本」和「接口」的判断逻辑抽到 service 而不是各写一份？（两处口径漂移是最难查的 bug） |
 | 4️⃣-15 | `src/services/ppt_progress.py` | **v2.0 大点 02 · 进度与任务锁（Redis）**：`shudao:ppt:progress:{task_id}`（hash：stage/progress/page/page_total/msg/ttl 2h）+ `shudao:ppt:lock:{task_id}`（SETNX 抢锁，TTL = 整单超时+60）。进度**不进数据库**（`ppt_tasks` 只有四态，改表要动 schema.sql）。Redis 挂了：进度静默失败、锁**降级放行**。思考：为什么锁的 TTL 要略长于整单超时？（进程崩了让锁自己过期，不留死锁） |
 | 4️⃣-16 | `src/services/__init__.py` | 空包标记。 |
@@ -215,6 +219,7 @@ team/
 | 5️⃣-12 | `src/routers/stats.py` | H07 统计（/api/stats）：类型分布 / 整改率 / 趋势。 |
 | 5️⃣-13 | `src/routers/vision.py` | 图片识别（POST /api/vision/hazard）：调 qwen 视觉，key 未配置返回 **503 + 清晰提示**；A 方案同步生成 boxes 标注图返回 boxes_url。思考：为什么 key 未配置返回 503 而不是 500？（503 是「当前不可用」语义，提示明确，500 是「内部错误」会误导） |
 | 5️⃣-14 | `src/routers/__init__.py` + `src/main.py`（挂载处） | 空包 + 路由汇总。main.py 里 `app.include_router(...)` 逐个挂载。思考：为什么 main.py 不直接写路由函数？（模块化，每个业务一个文件，main 只做装配） |
+| 5️⃣-15 | `src/routers/vision.py` | **v2.0 大点 06 · 识别接口四件套**：`POST /hazard`（兼容旧调用）、`POST /hazard/stream`（**SSE 四阶段**：vision → rag → websearch → synthesize，总预算 200s，任一阶段失败按阶段降级，裁定 11）、`POST /annotate`（上报前烘焙标注图，裁定 4）、`GET /box-style`（样式配置）。思考：为什么识别要改 SSE 而不是继续一次性 POST？（同步网搜会把总时延拉到 60~110s，一个转圈没法告诉用户卡在哪）为什么断连要放弃后续阶段？（用户已经走了，继续烧 GPU 和网搜额度没意义） |
 
 > 💡 学习心法：14 个路由文件 = 13 个业务模块 + 空包。**读路由文件时先看 docstring 的端点清单，再找对应 service 方法**——路由层本身没有业务，只是「HTTP 翻译器」。
 
@@ -234,6 +239,7 @@ team/
 | 6️⃣-8 | `src/schemas/__init__.py` | 空包标记。 |
 | 6️⃣-9 | `src/utils/files.py` | **上传安全工具**：类型白名单（jpg/jpeg/png/webp）+ MIME 双校验 + ≤10MB + uuid 重命名落盘。思考：为什么 uuid 重命名？（杜绝路径穿越与重名覆盖，不信任用户文件名） |
 | 6️⃣-10 | `src/utils/boxes.py` | 隐患定位画框：根据视觉返回 location [x1,y1,x2,y2] 像素坐标在**原图**画框，生成 `_boxes.png`。思考：为什么坐标是「图片真实像素」而不是归一化？（前后端共用原始像素，避免缩放换算误差） |
+| 6️⃣-11 | `src/models/hazard_ai.py` + `src/utils/boxes.py` | **v2.0 大点 06**：模型 `HazardAiAnalysis`（`hazard_id / model / boxes_json / raw_json / annotated_url / generated_by`，裁定 5）；画框工具重写——同色半透明填充让**重叠区自然加深**、白色外描边保证深色背景可见、字号/线宽随图宽自适应、标签默认只画序号 `#n`、`.jpg` 走 q90。思考：为什么填充要 25% 而不是不透明？（重叠时能看出两处隐患挨着）为什么标签默认只留序号？（4096 图里长标签会盖住隐患本身） |
 
 > 💡 学习心法：schemas 层是「**接口的静态类型**」——FastAPI 用它们做请求校验 + 响应序列化 + OpenAPI 文档。**改接口先改 schema 再改 router**，顺序不能反。
 
@@ -338,6 +344,7 @@ team/
 | 9️⃣-13e | `tests/test_agent_contrib.py` | **v2.0 大点 04 · Agent 渠道**（16 用例）：SSRF 边界 7 条、触发规则、幂等、身份认证、Agent 提交（`source_kind/actor_kind`）、方法论读写/版本/案例去重/`.example` 回退。 |
 | 9️⃣-13c | `tests/conftest.py` | **测试基础设施**：autouse 夹具把 `intent.detect` 桩成"永远 knowledge"，让所有 `/api/chat` 用例不打真模型。思考：为什么这类"隐形夹具"要写在 conftest 而不是每个文件？（一处生效、口径统一；代价是调试时要记得它存在） |
 | 9️⃣-14 | 其余（`test_knowledge_contrib` 等） | 同上口径；`test_quality_ok` 是**既有失败**（`kb_govern.quality_check` 对 200 行重复文本判不合格，而测试断言 `repeat_ratio==0.0`），与本版改动无关。 |
+| 9️⃣-15 | `tests/test_hazard_agent_06.py` | **v2.0 大点 06 · 31 例**：配色/线宽/字号换算、画框计数与 JPG/PNG 体积、坐标还原、缺口判定（0 命中 / 低分 / 检索异常都算缺口）、缺口合并只搜一次、**引用校验**（编造的 doc/host 一律丢、doc 对但章节写错则回落 Top1）、建议汇总坏 JSON 不崩、`enrich` 端到端、落库与回读。思考：为什么「编造引用」和「章节写错」要区别对待？（前者说明建议本身没依据，后者只是引用格式问题，证据是真的） |
 
 > 💡 学习心法：测试文件是「**验收口径的代码化**」——每个测试用例对应一个业务规则（RBAC、状态机、降级、格式校验）。跑 `pytest tests/` 全绿 = 核心业务没被改坏。
 
@@ -349,6 +356,7 @@ team/
 | --- | --- | --- |
 | 🔟-1 | `front/safety/index.html` | **一个文件包含全部前端**（约 2300 行）：CSS 设计系统（--primary 川蜀红 / --gold 金 / uiverse 组件重着色）+ 登录/注册 + 工作台（欢迎横幅 + 9 张快捷入口大卡片）+ 隐患管理（列表/详情弹窗/时间线）+ AI 助手（会话侧栏 + SSE 流式渲染 + 引用来源）+ PPT 工坊 + 考试工坊 + 贡献知识（上传表单 + 审核弹窗 + 判定标准弹窗）+ 个人主页 + 通知中心。思考：为什么前端用单文件而不是多文件工程？（Vibe Coding 团队免构建直接静态托管，hash 路由实现 SPA；代价是文件大，需按区块阅读） |
 | 🔟-2 | 前端关键函数 | `api()` 统一封装（token 注入 + 错误解析）、`route()` 哈希路由（`#/xxx` → show 对应 page）、`renderMsg`（SSE 流式渲染打字机效果）、`openModal/closeModal`（弹窗）、`applyUserAvatar()`（右上角头像）、`profileRenderKc/Hz`（个人主页贡献卡片）。思考：为什么前端所有 fetch 都走 api() 封装？（统一加 Authorization 头 + 统一错误处理，一处改全局生效） |
+| 🔟-3 | **隐患框交互（v2.0 大点 06）** | 识别走 `POST /api/vision/hazard/stream`（`consumeHazardStream` 逐帧解析 SSE，四阶段文案 + 进度条）；画框由 `renderHz()` 生成 SVG（`viewBox = 原图宽高`，`.hz-g` 一组 = 一个隐患：填充 + 白描边 + 色线 + 序号标签），`applyHzState()` 负责「聚焦时其余框淡化到 7%、选中框填充 50%」，`renderChips()` 做类别筛选，卡片与框双向联动（悬停/点击）；上报前调 `/api/vision/annotate` 把圈烘焙成 JPG 再随 `ai_analysis` 一起提交。列表页每条显示标注图缩略图（无标注回落原图），详情页可切「原图 / 标注图」并展示 AI 明细（建议 + 依据）。思考：为什么画框放在前端 SVG 而不是只用后端生成的图片？（筛选、高亮、重叠加深都是零请求；后端图只用于存档与列表缩略图）为什么上报时还要再烘焙一次？（存证需要一张"圈好的"静态图，不能依赖前端渲染） |
 
 ---
 
@@ -455,7 +463,7 @@ PYTHONPATH= /c/python/python.exe scripts/rag_metrics.py     # 六指标
 
 ## 七、项目现状 & 下一步
 
-### 已收官（D1–D5 + 优化丰富期 + v2.0 00/01/02）
+### 已收官（D1–D5 + 优化丰富期 + v2.0 00/01/02/03/04/05）
 
 > **v2.0 三个大点已收官**：`00` 账号隔离性（产物鉴权下载 + 文件名带归属）、`01` AI 助手提速（fp16 重排 / 会话级子块缓存 / 问题预处理 / 充分性判定 + 缺口补检 / Agent 化 / 冷启动治理 / A08 预处理审计）、`02` PPT 工坊升级（移除百度 PPT LLM；默认链路改为本地 PPT 生成 Agent：S0–S8 阶段编排 + 逐页 OfficeCLI 制作 + AGNES 审图 + Openverse 配图 + SSE 进度 + 账号沙箱；快速模式保留）。细节见 `backend/docs/v2.0/` 的 `Verdict/` 与 `Done/`。
 
@@ -466,6 +474,13 @@ PYTHONPATH= /c/python/python.exe scripts/rag_metrics.py     # 六指标
 - ✅ **D5**：知识库检索评估（ALL@10 = 0.83 达标）+ 前端 D5 美化 + 通知链路验证
 - ✅ **优化丰富期**：考试工坊（exam_papers 单表）、知识贡献（上传文件 + AI 预筛 + 清洗治理 + 增量入库）、个人主页（user_profiles 一对一 + 贡献聚合 + 右上角头像 + 工作台快捷入口）
 - ✅ **课程要求**：LangChain 1.x 重构（ChatOpenAI + with_fallbacks / HuggingFaceEmbeddings / langchain_chroma / RunnableLambda）
+
+### v2.0 大点 06（AI 隐患识别升级）— 已实现，待真机验收
+
+- 框可读性：类别定色相 / 等级定明度、白色外描边、填充 25%、字号线宽随图宽自适应、标签只留序号、聚焦淡化 7%；
+- 全业务可视：上报时落 `hazard_ai_analysis`（坐标 + 建议 + 标注图），列表/详情对管理员与安全员同时可见；
+- 知识库联动：隐患识别 Agent（B 混合编排）逐条并发检索 → 缺口（Top1 < 0.65）合并一次网搜 → 建议必带依据（`依据：doc·章节` / `来源：网络-host`），网搜同时提交知识文件审核；
+- 识别接口改 SSE（`/api/vision/hazard/stream`），旧 POST 保留；同图同场景 10 分钟缓存。
 
 ### 可选下一步
 

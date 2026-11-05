@@ -71,6 +71,13 @@ def hazard_detail(
     hazard = HazardService.detail(db, hazard_id)
     detail = HazardDetailOut.model_validate(hazard)
     detail.timeline = HazardService.timeline(db, hazard_id)
+    # 裁定 7：详情同时给「原图 + 标注图 + AI 隐患条目（含建议依据）」
+    from src.services import hazard_analysis_service as _haz_ai
+
+    latest = _haz_ai.load_latest(db, hazard_id)
+    if latest:
+        detail.annotated_url = latest.get("annotated_url")
+        detail.ai_hazards = latest.get("hazards") or []
     return detail
 
 

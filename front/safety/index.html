@@ -535,6 +535,36 @@ tr:hover td { background:#FCF9F4; }
 .kc-tl { border-left: 2px solid var(--line); margin: 10px 0 0 8px; padding-left: 14px; }
 .kc-tl div { position: relative; padding: 4px 0; font-size: 13px; color: var(--muted); }
 .kc-tl div::before { content: ""; position: absolute; left: -19px; top: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+/* ===== v2.0 大点 06：隐患 SVG 叠加（裁定 1/2/3/7） ===== */
+.ai-stage { display:flex; align-items:center; gap:10px; margin:6px 0 12px; font-size:13px; color:var(--muted); }
+.ai-stage .bar { flex:1; height:6px; background:var(--border); border-radius:4px; overflow:hidden; }
+.ai-stage .bar > i { display:block; height:100%; width:0; background:linear-gradient(90deg,#B8860B,#D4A64A); transition:width .35s ease; }
+.ai-canvas { position:relative; display:block; margin:8px 0 10px; line-height:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#111; }
+.ai-canvas img { display:block; width:100%; height:auto; }
+.ai-canvas svg { position:absolute; inset:0; width:100%; height:100%; }
+.hz-g { cursor:pointer; transition:opacity .22s ease; }
+.hz-g .hz-fill { transition:fill-opacity .22s ease; }
+.hz-g .hz-full { opacity:0; transition:opacity .18s ease; pointer-events:none; }
+.hz-g:hover .hz-full, .hz-g.on .hz-full { opacity:1; }
+.ai-chips { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 10px; }
+.hz-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; font-size:12px; border:1px solid var(--border); border-radius:999px; background:#fff; cursor:pointer; color:var(--ink); }
+.hz-chip.on { border-color:#B8860B; box-shadow:0 0 0 2px rgba(184,134,11,.15); font-weight:600; }
+.hz-chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
+.ai-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--muted); margin:2px 0 10px; }
+.ai-legend .lg { display:inline-flex; align-items:center; gap:6px; }
+.ai-legend .lg i { width:14px; height:10px; border-radius:2px; border:1px solid rgba(0,0,0,.15); }
+.hz-item { cursor:pointer; transition:box-shadow .18s ease, transform .18s ease; }
+.hz-item:hover { box-shadow:0 4px 14px rgba(0,0,0,.08); }
+.hz-item.on { box-shadow:0 0 0 2px #B8860B inset; }
+.hz-item .hz-idx { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 6px; margin-right:6px; border-radius:6px; color:#fff; font-size:12px; font-weight:700; }
+.hz-item .hz-sug { display:block; margin-top:6px; font-size:12.5px; color:#3c3c3c; }
+.hz-item .hz-ref { color:var(--muted); font-size:11.5px; margin-left:4px; }
+.hz-item .hz-gap { display:inline-block; margin-top:6px; padding:2px 8px; font-size:11.5px; border-radius:4px; background:#FFF4CE; color:#7A5C00; border:1px solid #F0D98A; }
+tr .hz-thumb { width:54px; height:38px; object-fit:cover; border-radius:4px; border:1px solid var(--border); margin-right:8px; vertical-align:middle; }
+.d-img-toggle { display:flex; gap:8px; margin-bottom:8px; }
+.d-img-toggle button { font-size:12px; padding:4px 10px; border:1px solid var(--border); border-radius:999px; background:#fff; cursor:pointer; }
+.d-img-toggle button.on { border-color:#B8860B; font-weight:600; }
 </style>
 </head>
 <body>
@@ -712,6 +742,17 @@ tr:hover td { background:#FCF9F4; }
             <h3 style="margin:0">🤖 AI 识别结果</h3>
             <button class="btn btn-gold btn-sm" id="h-ai-fill" title="把 AI 分析结果填入下方隐患描述框">📋 一键填入描述</button>
           </div>
+          <div id="h-ai-stage" class="ai-stage" style="display:none"><span id="h-ai-stage-txt">准备中…</span><span class="bar"><i id="h-ai-bar"></i></span></div>
+          <div id="h-ai-canvas" class="ai-canvas" style="display:none">
+            <img id="h-ai-img" alt="现场图（隐患框）">
+            <svg id="h-ai-svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+              <defs><filter id="hzShadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.55"/>
+              </filter></defs>
+            </svg>
+          </div>
+          <div id="h-ai-chips" class="ai-chips" style="display:none"></div>
+          <div id="h-ai-legend" class="ai-legend" style="display:none"></div>
           <div id="h-ai-body"></div>
         </div>
         <div style="display:flex;gap:10px;margin-top:18px">
@@ -734,7 +775,14 @@ tr:hover td { background:#FCF9F4; }
           <div id="d-actions" style="display:flex;gap:8px;flex-wrap:wrap"></div>
         </div>
         <p id="d-desc" style="margin-top:14px;line-height:1.8;font-size:14px"></p>
+        <div class="d-img-toggle" id="d-img-toggle" style="display:none">
+          <button data-v="orig" class="on">原图</button><button data-v="anno">标注图</button>
+        </div>
         <div id="d-imgs" class="img-grid"></div>
+      </div>
+      <div class="card" id="d-ai" style="display:none">
+        <h3>AI 识别明细（建议均带依据）</h3>
+        <div id="d-ai-body"></div>
       </div>
       <div class="card">
         <h3>处理进度时间线</h3>
@@ -1292,7 +1340,12 @@ async function loadHazards() {
     const tbody = document.getElementById('haz-tbody'); tbody.innerHTML = '';
     (d.items || []).forEach(h => {
       tbody.innerHTML += `<tr>
-        <td><a href="#/hazard/${h.id}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(h.title)}</a></td>
+        <td>${(() => {
+          let thumb = h.annotated_url;
+          if (!thumb) { try { thumb = (JSON.parse(h.image_urls || '[]') || [])[0]; } catch (e) { thumb = null; } }
+          const img = thumb ? `<img class="hz-thumb" src="${thumb}" alt="缩略图" onclick="window.open('${thumb}')">` : '';
+          return img + `<a href="#/hazard/${h.id}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(h.title)}</a>`;
+        })()}</td>
         <td><span class="badge lv-${h.level}">${h.level}</span></td>
         <td><span class="badge ${h.status}">${h.status}</span></td>
         <td>${esc(h.location || '-')}</td><td>#${h.reporter_id}</td>
@@ -1309,8 +1362,13 @@ async function loadHazards() {
 function resetForm() {
   ['h-title','h-type','h-loc','h-desc'].forEach(i=>document.getElementById(i).value='');
   document.getElementById('h-level').value='一般';
-  uploadUrls = []; pendingFiles = []; lastAiAnalysis = null; document.getElementById('h-imgs').innerHTML='';
+  uploadUrls = []; pendingFiles = []; lastAiAnalysis = null; lastAnnotatedUrl = null;
+  hzView = { analysis:null, focus:0, cat:'' };
+  document.getElementById('h-imgs').innerHTML='';
   document.getElementById('h-ai-result').style.display='none';
+  ['h-ai-canvas','h-ai-chips','h-ai-legend','h-ai-stage'].forEach(i=>document.getElementById(i).style.display='none');
+  document.getElementById('h-ai-body').innerHTML='';
+  document.getElementById('h-ai-svg').innerHTML='';
 }
 document.getElementById('h-upload').onclick = () => document.getElementById('h-file').click();
 document.getElementById('h-file').onchange = async (e) => {
@@ -1327,43 +1385,252 @@ document.getElementById('h-file').onchange = async (e) => {
   }
   e.target.value = '';
 };
+/* ================= v2.0 大点 06：SVG 叠加渲染 ================= */
+let hzStyle = null;
+let hzView = { analysis: null, focus: 0, cat: '' };
+let lastAnnotatedUrl = null;
+
+async function loadHzStyle() {
+  if (hzStyle) return hzStyle;
+  try { const r = await api('/api/vision/box-style'); hzStyle = await r.json(); }
+  catch (e) { hzStyle = null; }
+  return hzStyle;
+}
+function hzColor(level, category) {
+  const st = hzStyle; if (!st) return '#B8860B';
+  const cat = (st.colors || {})[category] ? category : st.default_category;
+  const m = (st.colors || {})[cat] || {};
+  return m[level] || m['一般'] || '#B8860B';
+}
+function hzStroke(level, W) {
+  const st = hzStyle || { level_stroke_base: {}, base_width: 4096, stroke_min: 2 };
+  const base = ((st.level_stroke_base || {})[level]) || 7;
+  return Math.max(st.stroke_min || 2, Math.round(base * W / (st.base_width || 4096)));
+}
+function hzFont(W) {
+  const st = hzStyle || { font_ratio: 1 / 64, font_min: 18 };
+  return Math.max(st.font_min || 18, Math.round(W * (st.font_ratio || 1 / 64)));
+}
+function setStage(txt, pct) {
+  const box = document.getElementById('h-ai-stage');
+  box.style.display = 'flex';
+  document.getElementById('h-ai-stage-txt').textContent = txt;
+  document.getElementById('h-ai-bar').style.width = (pct == null ? 0 : pct) + '%';
+}
+/* 画框：一个隐患一个 <g>；填充 25%、白描边 + 同色线、标签只显序号 */
+function renderHz() {
+  const a = hzView.analysis; if (!a) return;
+  const st = hzStyle || {};
+  const hazards = a.hazards || [];
+  const img = document.getElementById('h-ai-img');
+  const svg = document.getElementById('h-ai-svg');
+  const W = a._w || img.naturalWidth || 1024, H = a._h || img.naturalHeight || 768;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const fs = hzFont(W);
+  const parts = [];
+  hazards.forEach((h, i) => {
+    const loc = h.location;
+    if (!Array.isArray(loc) || loc.length !== 4) return;
+    const [x1, y1, x2, y2] = loc.map(Number);
+    if (!(x2 > x1 && y2 > y1)) return;
+    const c = hzColor(h.level, h.category);
+    const lw = hzStroke(h.level, W);
+    const idx = i + 1;
+    const padX = Math.max(6, Math.round(fs * 0.3)), padY = Math.max(3, Math.round(fs * 0.1));
+    const tw = Math.max(fs * 1.0, String(idx).length * fs * 0.62 + padX * 2);
+    const th = fs + padY * 2;
+    let lx = x1 + padX, ly = y1 + padY;
+    if (lx + tw > x2) lx = Math.max(x1, x2 - tw);
+    if (ly + th > y2) ly = Math.max(y1, y2 - th);
+    const full = `#${idx} ${h.level || ''} ${h.category || ''} ${(h.description || '').slice(0, 16)}`;
+    parts.push(`<g class="hz-g" data-i="${idx}">
+      <rect class="hz-fill" x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="${c}" fill-opacity="${st.fill_alpha ?? 0.25}"></rect>
+      <rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="#fff" stroke-opacity="0.92" stroke-width="${lw + 4}"></rect>
+      <rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="none" stroke="${c}" stroke-width="${lw}"></rect>
+      <rect x="${lx}" y="${ly}" width="${tw}" height="${th}" rx="${Math.round(th * 0.28)}" fill="${c}" fill-opacity="0.95"></rect>
+      <text x="${lx + padX}" y="${ly + th / 2}" fill="#fff" font-size="${fs}" font-weight="700" dominant-baseline="central">#${idx}</text>
+      <text class="hz-full" x="${lx + padX}" y="${ly + th + fs * 0.85}" fill="#fff" font-size="${Math.round(fs * 0.8)}" font-weight="600" filter="url(#hzShadow)" stroke="#000" stroke-opacity="0.5" stroke-width="${Math.max(2, Math.round(fs * 0.08))}" paint-order="stroke">${esc(full)}</text>
+    </g>`);
+  });
+  svg.innerHTML = `<defs><filter id="hzShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.55"/></filter></defs>` + parts.join('');
+  svg.querySelectorAll('.hz-g').forEach(g => {
+    g.addEventListener('mouseenter', () => { if (!hzView.focus) applyHzState(+g.dataset.i); });
+    g.addEventListener('mouseleave', () => { if (!hzView.focus) applyHzState(0); });
+    g.addEventListener('click', () => focusHz(+g.dataset.i));
+  });
+}
+/* 聚焦/筛选：非目标框淡化到 6~8%，选中框填充 50% */
+function applyHzState(visualOnly) {
+  const st = hzStyle || {};
+  const focus = (visualOnly === undefined ? hzView.focus : visualOnly);
+  const cat = hzView.cat;
+  const hazards = (hzView.analysis || {}).hazards || [];
+  document.querySelectorAll('#h-ai-svg .hz-g').forEach(g => {
+    const i = +g.dataset.i, h = hazards[i - 1] || {};
+    const active = (!focus || focus === i) && (!cat || h.category === cat);
+    g.classList.toggle('on', focus === i);
+    const fill = g.querySelector('.hz-fill');
+    if (fill) fill.setAttribute('fill-opacity', focus === i ? (st.focus_fill_alpha ?? 0.5) : (st.fill_alpha ?? 0.25));
+    g.style.opacity = active ? 1 : (st.dim_fill_alpha ?? 0.07);
+  });
+  if (visualOnly === undefined) {
+    document.querySelectorAll('#h-ai-body .hz-item').forEach(el => el.classList.toggle('on', +el.dataset.i === hzView.focus));
+  }
+}
+function focusHz(i) {
+  hzView.focus = (hzView.focus === i ? 0 : i);
+  applyHzState();
+  const card = document.querySelector(`#h-ai-body .hz-item[data-i="${hzView.focus}"]`);
+  if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function renderChips() {
+  const hazards = ((hzView.analysis || {}).hazards) || [];
+  const cats = [...new Set(hazards.map(h => h.category).filter(Boolean))];
+  const box = document.getElementById('h-ai-chips');
+  if (!cats.length) { box.style.display = 'none'; return; }
+  box.innerHTML = `<button class="hz-chip ${hzView.cat ? '' : 'on'}" data-cat="">全部 ${hazards.length}</button>` +
+    cats.map(c => {
+      const n = hazards.filter(h => h.category === c).length;
+      return `<button class="hz-chip ${hzView.cat === c ? 'on' : ''}" data-cat="${esc(c)}"><i style="background:${hzColor('一般', c)}"></i>${esc(c)} ${n}</button>`;
+    }).join('');
+  box.querySelectorAll('.hz-chip').forEach(b => b.onclick = () => {
+    hzView.cat = b.dataset.cat; hzView.focus = 0; renderChips(); applyHzState();
+  });
+  box.style.display = 'flex';
+}
+function renderLegend() {
+  const hazards = ((hzView.analysis || {}).hazards) || [];
+  const cat = (hazards[0] || {}).category;
+  const box = document.getElementById('h-ai-legend');
+  box.innerHTML = ['重大', '较大', '一般', '轻微'].map(lv =>
+    `<span class="lg"><i style="background:${hzColor(lv, cat)}"></i>${lv}</span>`).join('') +
+    '<span class="lg" style="opacity:.65">色相=类别，深浅=等级</span>';
+  box.style.display = 'flex';
+}
+function refText(h) {
+  return (h.refs || []).map(r => r.kind === 'kb'
+    ? `依据：${r.doc || ''}${r.chapter ? '·' + r.chapter : ''}`
+    : `来源：网络-${r.host || ''}`).join('；');
+}
+function hzItemHtml(h, i) {
+  const c = hzColor(h.level, h.category);
+  const refs = refText(h);
+  const sug = h.suggestion
+    ? `<span class="hz-sug">建议：${esc(h.suggestion)}${refs ? `<span class="hz-ref">（${esc(refs)}）</span>` : ''}</span>`
+    : `<span class="hz-gap">暂无依据（${esc(h.gap_note || '知识库暂无该类隐患依据')}）</span>`;
+  // 模型对个别隐患给不出坐标（location=null）时，框画不出来 → 明确标注，避免"清单 6 条、图上 4 个框"的困惑
+  const noBox = Array.isArray(h.location) && h.location.length === 4 ? '' : '<span class="hz-gap" style="margin-left:6px;background:#EEF2F7;border-color:#CBD5E1;color:#475569">未定位（无坐标）</span>';
+  return `<div class="hazard-item hz-item lv-${esc(h.level || '')}" data-i="${i}">
+    <span class="hz-idx" style="background:${c}">#${i}</span>
+    <span class="badge lv-${esc(h.level || '')}">${esc(h.level || '未分级')}</span>
+    <b>${esc(h.category || '')}</b>：${esc(h.description || '')}${noBox}${sug}</div>`;
+}
+function applyAiResult(res) {
+  lastAiAnalysis = res;
+  hzView.analysis = res; hzView.focus = 0; hzView.cat = '';
+  res._w = res.image_width || 0; res._h = res.image_height || 0;
+  const img = document.getElementById('h-ai-img');
+  img.onerror = () => { document.getElementById('h-ai-canvas').style.display = 'none'; };
+  img.src = res.image_url || uploadUrls[0] || '';
+  document.getElementById('h-ai-result').style.display = 'block';
+  document.getElementById('h-ai-canvas').style.display = 'block';
+  renderHz(); applyHzState(); renderChips(); renderLegend();
+  const hazards = res.hazards || [];
+  document.getElementById('h-ai-body').innerHTML =
+    `<div style="margin-bottom:8px">${esc(res.summary || '')}</div>` +
+    hazards.map((h, i) => hzItemHtml(h, i + 1)).join('');   // 编号从 1 开始，与 SVG 标签一致
+  document.querySelectorAll('#h-ai-body .hz-item').forEach(el => {
+    el.addEventListener('click', () => focusHz(+el.dataset.i));
+    el.addEventListener('mouseenter', () => { if (!hzView.focus) applyHzState(+el.dataset.i); });
+    el.addEventListener('mouseleave', () => { if (!hzView.focus) applyHzState(0); });
+  });
+  const first = hazards[0];
+  if (first) {
+    if (first.level) document.getElementById('h-level').value = first.level;
+    if (first.category) document.getElementById('h-type').value = first.category;
+    if (first.description && !document.getElementById('h-desc').value) document.getElementById('h-desc').value = first.description;
+  }
+  if (!hazards.length) document.getElementById('h-ai-body').innerHTML += '<div class="hint">未识别到明显隐患，建议补充现场描述后重试。</div>';
+}
+/* 读取 SSE：data: {json} … data:[DONE] */
+async function consumeHazardStream(fd, signal, onEvent) {
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch('/api/vision/hazard/stream', { method: 'POST', headers, body: fd, signal });
+  if (resp.status === 401) { showLogin(); throw new Error('登录已过期'); }
+  if (!resp.ok) { let d = resp.statusText; try { d = (await resp.json()).detail || d; } catch (e) {} throw new Error(d); }
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = '', finished = false;
+  while (!finished) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      const line = raw.split('\n').find(l => l.startsWith('data:'));
+      if (!line) continue;
+      const payload = line.slice(5).trim();
+      if (payload === '[DONE]') { finished = true; break; }
+      let ev; try { ev = JSON.parse(payload); } catch (e) { continue; }
+      if (onEvent(ev) === false) { finished = true; break; }
+    }
+  }
+}
 document.getElementById('h-ai-btn').onclick = async () => {
   if (!pendingFiles.length) return alert('请先选择要识别的图片');
-  const btn = document.getElementById('h-ai-btn'); btn.disabled = true; btn.textContent = '🤖 AI 分析中…';
+  const btn = document.getElementById('h-ai-btn');
+  btn.disabled = true; btn.textContent = '🤖 AI 分析中…';
+  document.getElementById('h-ai-result').style.display = 'block';
+  await loadHzStyle();
   const fd = new FormData();
-  fd.append('file', pendingFiles[0]);  // 识别第一张已上传图片
+  fd.append('file', pendingFiles[0]);
   fd.append('scene_description', document.getElementById('h-desc').value || '');
-  // 前端超时兜底：视觉专属实例冷启动/响应慢时避免无限等待（120s）
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 120000);
+  const timer = setTimeout(() => ctrl.abort(), 200000);   // 有缺口时会走同步网搜，放宽到 200s
+  setStage('正在识别现场隐患…', 10);
+  let got = false;
   try {
-    const r = await api('/api/vision/hazard', { method:'POST', body: fd, signal: ctrl.signal });
-    const d = await r.json();
-    const a = d.analysis || {};
-    lastAiAnalysis = a;  // 保存供「一键填入描述」使用
-    document.getElementById('h-ai-result').style.display = 'block';
-    // A 方案：后端生成的隐患标注图（含像素坐标时返回 boxes_url），优先展示
-    let boxesHtml = '';
-    if (d.boxes_url) boxesHtml = `<div style="margin:10px 0"><img src="${d.boxes_url}" style="max-width:100%;border:1px solid var(--border);border-radius:6px" onclick="window.open('${d.boxes_url}')" alt="隐患标注图"></div>`;
-    // 隐患条目：按等级显示彩色徽章 + 左边框着色（程度词可视化）
-    const hazards = (a.hazards||[]).map(h=>`<div class="hazard-item lv-${esc(h.level||'')}"><span class="badge lv-${esc(h.level||'')}">${esc(h.level||'未分级')}</span> <b>${esc(h.category||'')}</b>：${esc(h.description||'')}<span class="hint">建议：${esc(h.suggestion||'')}</span></div>`).join('');
-    document.getElementById('h-ai-body').innerHTML = boxesHtml + `<div style="margin-bottom:8px">${esc(a.summary||'')}</div>${hazards}`;
-    const first = (a.hazards||[])[0];
-    if (first) { if (first.level) document.getElementById('h-level').value = first.level; if (first.category) document.getElementById('h-type').value = first.category; if (first.description && !document.getElementById('h-desc').value) document.getElementById('h-desc').value = first.description; }
-  } catch(err){ document.getElementById('h-ai-result').style.display='block'; document.getElementById('h-ai-body').innerHTML = '<span style="color:var(--st-pending)">识别失败：' + esc(err.message) + '</span>'; }
-  btn.disabled=false; btn.textContent='🤖 AI 识别隐患（视觉智能体）';
+    await consumeHazardStream(fd, ctrl.signal, (ev) => {
+      if (ev.stage === 'cache') setStage('命中 10 分钟内缓存…', 90);
+      else if (ev.stage === 'vision') setStage(ev.msg || '正在识别现场隐患…', 12);
+      else if (ev.stage === 'vision_done') setStage(`识别完成：${ev.count || 0} 条隐患，正在检索知识库…`, 32);
+      else if (ev.stage === 'rag') setStage('检索企业知识库（安全生产条款）…', 38);
+      else if (ev.stage === 'rag_done') setStage(`检索完成（依据不足 ${(ev.gaps || []).length} 条）`, 52);
+      else if (ev.stage === 'websearch') setStage(ev.msg || '知识库缺料，正在联网补充…', 60);
+      else if (ev.stage === 'websearch_done') setStage(ev.ok
+        ? `联网补充完成（${(ev.hosts || []).join('、') || '已采集'}），已提交知识审核`
+        : `联网补充未成（${ev.note || '超时'}），继续汇总`, 78);
+      else if (ev.stage === 'synthesize') setStage('按依据汇总整改建议…', 86);
+      else if (ev.stage === 'synthesize_done') setStage(`已生成 ${ev.generated || 0} 条有依据的建议`, 94);
+      else if (ev.stage === 'done') { setStage('完成', 100); got = true; applyAiResult(ev.result || {}); return false; }
+      else if (ev.stage === 'error') {
+        got = true; setStage('识别失败', 0);
+        document.getElementById('h-ai-body').innerHTML = `<span style="color:var(--st-pending)">识别失败：${esc(ev.msg || '')}</span>`;
+        return false;
+      }
+    });
+    if (!got) throw new Error('连接中断（未收到结果）');
+  } catch (err) {
+    setStage('识别失败', 0);
+    document.getElementById('h-ai-body').innerHTML =
+      `<span style="color:var(--st-pending)">识别失败：${esc(err.name === 'AbortError' ? '超过 200s 未返回，请重试' : err.message)}</span>`;
+  } finally {
+    clearTimeout(timer);
+    btn.disabled = false; btn.textContent = '🤖 AI 识别隐患（视觉智能体）';
+  }
 };
-/* 一键填入描述：把 AI 分析结果（summary + 各隐患条目）拼成文本填入 h-desc */
+/* 一键填入描述：把 AI 分析结果（summary + 各隐患条目 + 建议依据）拼成文本 */
 document.getElementById('h-ai-fill').onclick = () => {
   const a = lastAiAnalysis;
-  if (!a || !(a.hazards||[]).length) return alert('请先进行 AI 识别');
+  if (!a || !(a.hazards || []).length) return alert('请先进行 AI 识别');
   const lines = [a.summary || ''];
-  (a.hazards||[]).forEach((h,i) => {
-    lines.push(`${i+1}. [${h.level||'未分级'}] ${h.category||''}：${h.description||''}`);
-    if (h.suggestion) lines.push(`   建议：${h.suggestion}`);
+  (a.hazards || []).forEach((h, i) => {
+    lines.push(`${i + 1}. [${h.level || '未分级'}] ${h.category || ''}：${h.description || ''}`);
+    if (h.suggestion) lines.push(`   建议：${h.suggestion}${refText(h) ? `（${refText(h)}）` : ''}`);
   });
   document.getElementById('h-desc').value = lines.join('\n');
-  // 联动：标题/等级/类型也已用第一个隐患预填（识别时已做），提示用户可编辑
   alert('已填入隐患描述框，可手动编辑后提交');
 };
 document.getElementById('h-submit').onclick = async () => {
@@ -1376,12 +1643,31 @@ document.getElementById('h-submit').onclick = async () => {
     image_urls: uploadUrls.length ? uploadUrls : null,
   };
   if (!body.title || !body.description) return alert('标题和描述必填');
+  const btn = document.getElementById('h-submit');
+  btn.disabled = true; btn.textContent = '提交中…';
   try {
-    const r = await api('/api/hazards', { method:'POST', body: JSON.stringify(body) });
+    // 裁定 4：上报时把"前端渲染好圈后的图"落成图片（服务端按同一份样式烘焙）
+    if (lastAiAnalysis && (lastAiAnalysis.hazards || []).length && uploadUrls.length) {
+      try {
+        const r = await api('/api/vision/annotate', {
+          method: 'POST',
+          body: JSON.stringify({ image_url: uploadUrls[0], hazards: lastAiAnalysis.hazards }),
+        });
+        const d = await r.json();
+        lastAnnotatedUrl = d.annotated_url || null;
+      } catch (e) { console.warn('标注图烘焙失败（不影响上报）', e); }
+    }
+    if (lastAnnotatedUrl) body.annotated_image = lastAnnotatedUrl;
+    if (lastAiAnalysis) body.ai_analysis = lastAiAnalysis;
+    const r = await api('/api/hazards', { method: 'POST', body: JSON.stringify(body) });
     const d = await r.json();
     alert('上报成功！隐患 #' + d.id);
     location.hash = '#/hazard/' + d.id;
-  } catch(e){ alert('上报失败：' + e.message); }
+  } catch (e) {
+    alert('上报失败：' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '提交上报';
+  }
 };
 
 /* ============ 详情 ============ */
@@ -1395,7 +1681,35 @@ async function loadDetail() {
     document.getElementById('d-desc').textContent = h.description;
     const imgs = document.getElementById('d-imgs');
     imgs.innerHTML = '';
-    try { JSON.parse(h.image_urls||'[]').forEach(u => imgs.innerHTML += `<img src="${u}" onclick="window.open('${u}')">`); } catch(e){}
+    let origImgs = [];
+    try { origImgs = JSON.parse(h.image_urls || '[]') || []; } catch (e) { origImgs = []; }
+    const paintImgs = (kind) => {
+      imgs.innerHTML = '';
+      const list = (kind === 'anno' && h.annotated_url) ? [h.annotated_url] : origImgs;
+      list.forEach(u => imgs.innerHTML += `<img src="${u}" onclick="window.open('${u}')">`);
+      if (!list.length) imgs.innerHTML = '<div class="hint">无图片</div>';
+    };
+    paintImgs('orig');
+    const tg = document.getElementById('d-img-toggle');
+    if (h.annotated_url) {
+      tg.style.display = 'flex';
+      tg.querySelectorAll('button').forEach(b => {
+        b.classList.toggle('on', b.dataset.v === 'orig');
+        b.onclick = () => {
+          tg.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+          b.classList.add('on'); paintImgs(b.dataset.v);
+        };
+      });
+    } else { tg.style.display = 'none'; }
+    // AI 明细（含每条建议的依据）；样式色板可能未加载 → 先取一次
+    await loadHzStyle();
+    const aiList = h.ai_hazards || [];
+    const dAi = document.getElementById('d-ai');
+    if (aiList.length) {
+      dAi.style.display = 'block';
+      document.getElementById('d-ai-body').innerHTML = aiList.map((x, i) => hzItemHtml(x, i + 1)).join('');
+      document.querySelectorAll('#d-ai-body .hz-item').forEach(el => el.classList.remove('on'));
+    } else { dAi.style.display = 'none'; }
     const tl = document.getElementById('d-timeline'); tl.innerHTML = '';
     (h.timeline||[]).forEach(t => {
       tl.innerHTML += `<div class="tl-item"><div class="tl-action">${esc(t.action)}</div>${t.note?`<div class="tl-note">${esc(t.note)}</div>`:''}<div class="tl-time">${esc((t.created_at||'').slice(0,16))} · 操作人 #${t.operator_id||'-'}</div></div>`;
@@ -1689,7 +2003,14 @@ async function send() {
           const obj = JSON.parse(payload);
           if (obj.delta) { if (first){ bubble.querySelector('.cursor')?.remove(); first=false; } answer += obj.delta; bubble.textContent = answer;
             document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight; }
-          if (obj.meta) meta = obj.meta;
+          if (obj.meta) {
+            meta = Object.assign({}, meta || {}, obj.meta);
+            // v2.0 大点 04 v1.4：同步补料进行中，立刻在状态行提示（回答会等它）
+            if (obj.meta.stage === 'supplement') {
+              const elNow = document.getElementById('chat-meta');
+              if (elNow) elNow.textContent = '⏳ ' + (obj.meta.msg || '正在联网补充资料…');
+            }
+          }
           if (obj.error) { bubble.querySelector('.cursor')?.remove(); bubble.textContent = '❌ ' + obj.error; }
         } catch(e){}
       }
@@ -1711,7 +2032,10 @@ async function send() {
         ? `本轮：闲聊（未检索）${intentMs} · ${meta.precision} · 未检索知识库 · 来源 0 条`
         : `本轮：${MODE_LABEL[meta.mode] || meta.mode}${intentMs} · ${meta.precision} · 检索 ${secs}s · 上下文 ${meta.context_chars} 字 · 来源 ${meta.sources} 条`
           + (meta.degraded ? ' · Redis 不可用（退化模式）' : '')
-          + (meta.retrieval_degraded ? ' · 检索失败（通用回答，无出处）' : '');
+          + (meta.retrieval_degraded ? ' · 检索失败（通用回答，无出处）' : '')
+          + (meta.supplemented === true
+              ? ` · 已联网补充 ${meta.supplement_pages || 0} 篇（未审核${meta.supplement_contrib ? '，已提交人审 #' + meta.supplement_contrib : '，未提交'}）`
+              : (meta.supplemented === false ? ' · 联网补充未成，按无资料作答' : ''));
     }
     await loadConvs();
     _preAuditCache = {};  // 有新回答 → 审计数据可能变化，清缓存

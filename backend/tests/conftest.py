@@ -21,6 +21,18 @@ def _stub_intent(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _disable_sync_supplement(monkeypatch):
+    """默认关闭「同步补料」（v2.0 大点 04 v1.4）。
+
+    否则任何"检索为空/降级"的用例都会真去开 Playwright 联网采集 60s。
+    需要验证门禁的用例自己把它打开并 monkeypatch `agent_scout.run_sync`。
+    """
+    from src.core.config import settings
+
+    monkeypatch.setattr(settings, "SCOUT_SYNC_ENABLED", False, raising=False)
+
+
 @pytest.fixture()
 def db_session():
     """真实 MySQL 会话（本地集成测试用）；用完关闭，不自动回滚（调用方负责清理自己写入的行）。"""

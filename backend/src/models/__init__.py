@@ -2,6 +2,7 @@
 from src.models.conversation import ChatMessage, Conversation
 from src.models.exam_paper import ExamPaper
 from src.models.hazard import Hazard, HazardTimeline
+from src.models.hazard_ai import HazardAiAnalysis
 from src.models.knowledge_contrib import KnowledgeContribTimeline, KnowledgeContribution
 from src.models.ppt_task import PptTask
 from src.models.user import User
@@ -11,6 +12,7 @@ __all__ = [
     "User",
     "Hazard",
     "HazardTimeline",
+    "HazardAiAnalysis",
     "Conversation",
     "ChatMessage",
     "PptTask",

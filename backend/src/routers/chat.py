@@ -80,6 +80,12 @@ RETRIEVAL_DEGRADED_NOTE = (
     "并在回答开头用一句话说明：本次未能检索企业知识库，回答不含出处。）"
 )
 
+#: v2.0 大点 04 v1.4：同步补料的上下文标记（未审核，必须在回答里声明）
+SYNC_SUPPLEMENT_HEADER = (
+    "【补充资料·未审核（公开网络来源，管理员尚未审核）】\n"
+    "（以下内容由系统联网检索并整理，仅供本轮参考；管理员审核通过后才会进入知识库）\n"
+)
+
 #: 闲聊直答注入的最近对话行数上限（3 轮 = user+assistant 各 3 条）
 CHAT_HISTORY_LINES = 6
 
@@ -351,6 +357,44 @@ def chat(data: ChatRequest, user: dict = Depends(get_current_user)):
             # 裁定 5：没有资料就如实说明，绝不伪造来源
             context = RETRIEVAL_DEGRADED_NOTE
         sources = list(prepared["sources"])  # 生成过程中可能补入 Agent 补检的来源
+
+        # v2.0 大点 04 v1.4：同步补料门禁（只在「0 命中 / 检索降级」时触发）
+        # 用户 2026-10-29 拍板：先补料再回答，不允许"先说报了、库里没有"。
+        supplement: dict | None = None
+        if getattr(settings, "SCOUT_SYNC_ENABLED", True) and (
+            retrieval_degraded or not prepared["sources"]
+        ):
+            yield _sse({"meta": {"stage": "supplement",
+                                 "msg": f"知识库未覆盖，正在联网补充资料（最多 {int(settings.SCOUT_SYNC_TIMEOUT)}s）…"}})
+            t_sup = time.perf_counter()
+            try:
+                from src.ai import agent_scout
+
+                supplement = agent_scout.run_sync(conv_id, data.question)
+            except Exception as exc:  # noqa: BLE001 —— 补料失败不能拖垮回答
+                logger.warning("同步补料异常，按无资料回答：%s", exc)
+                supplement = {"ok": False, "note": f"{type(exc).__name__}: {exc}"[:120]}
+            timings["supplement"] = time.perf_counter() - t_sup
+            if supplement.get("ok"):
+                sep = "\n\n"
+                context = (context or "") + sep + SYNC_SUPPLEMENT_HEADER + supplement["md"]
+                yield _sse({"meta": {
+                    "supplemented": True,
+                    "supplement_pages": supplement.get("pages"),
+                    "supplement_sources": supplement.get("domains"),
+                    "supplement_contrib": supplement.get("contrib_id"),
+                    "supplement_ms": int(timings["supplement"] * 1000),
+                }})
+                logger.info(
+                    "同步补料完成 conv=%s：%s 字 / %s 篇 / 贡献 %s / %.0fs",
+                    conv_id, supplement.get("chars"), supplement.get("pages"),
+                    supplement.get("contrib_id"), timings["supplement"],
+                )
+            else:
+                yield _sse({"meta": {"supplemented": False,
+                                     "supplement_note": supplement.get("note") or "未取得可用资料"}})
+                logger.info("同步补料未成 conv=%s：%s", conv_id, supplement.get("note"))
+
         collected: list[str] = []
 
         # 生成：Agent 优先（可补检一次），异常回落直连 LLM
@@ -358,7 +402,8 @@ def chat(data: ChatRequest, user: dict = Depends(get_current_user)):
             try:
                 user_content = chat_agent.build_user_message(context, history, data.question)
                 run_ctx = {"conversation_id": conv_id, "question": data.question,
-                           "retrieve_calls": 0, "gap_calls": 0, "new_blocks": []}
+                           "retrieve_calls": 0, "gap_calls": 0, "new_blocks": [],
+                           "supplement_done": bool(supplement and supplement.get("ok"))}
                 gen_t0 = time.perf_counter()
                 for token in chat_agent.stream_answer(user_content, run_ctx):
                     collected.append(token)

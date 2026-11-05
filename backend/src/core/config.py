@@ -142,6 +142,13 @@ class Settings(BaseSettings):
     KB_FETCH_MAX_PAGES: int = 8            # 单任务最多页面数
     KB_FETCH_MAX_BYTES: int = 8388608      # 单任务下载上限（8MB）
     KB_FETCH_TIMEOUT_S: int = 600          # 单任务总时长
+    # v2.0 大点 04 v1.4：同步补料（先补再答；只有 0 命中/检索降级才触发）
+    SCOUT_SYNC_ENABLED: bool = True
+    SCOUT_SYNC_TIMEOUT: float = 60.0        # 阻塞回答的上限
+    SCOUT_SYNC_MAX_PAGES: int = 4           # 同步场景页数（比异步小，避免等太久）
+    SCOUT_SYNC_MAX_SITES: int = 3
+    SCOUT_SYNC_CACHE_TTL: int = 600         # 同题 10 分钟内复用
+    SCOUT_SYNC_MIN_CHARS: int = 600         # 本轮可直接引用的最低字数（低于此不提交，只用于回答）
     KB_FETCH_DENY_HOSTS: str = ""          # 逗号分隔的额外黑名单（内网/本机默认硬禁）
     # 采集搜索引擎（配置驱动，格式：`名称|搜索URL模板|结果选择器`，用 `;` 分隔，按顺序回退）
     # 百度对无头浏览器会弹验证码，故默认不含百度
@@ -158,6 +165,15 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = 0.7
 
     # ---- CORS ----
+    # ---------------- 06 AI 隐患识别（v2.0 大点 06） ----------------
+    HAZARD_AGENT_ENABLED: bool = True       # 关掉 → 退回"视觉模型自己写建议"（旧行为，回滚用）
+    HAZARD_WEB_FILL_ENABLED: bool = True    # 知识库缺口是否同步网搜补料
+    HAZARD_GAP_THRESHOLD: float = 0.65      # Top1 低于此值判定"依据不足"（实测空档 0.61~0.88）
+    HAZARD_RAG_TIMEOUT: float = 8.0
+    HAZARD_WEB_TIMEOUT: float = 70.0        # 缺口网搜硬上限（run_sync 内部预算不保证总时长）         # 单条隐患检索超时（温态 1~3s）
+    HAZARD_CACHE_TTL: int = 600             # 同图同场景结果缓存（秒），0 = 关闭
+    HAZARD_ANNOTATE_JPEG_QUALITY: int = 90  # 标注图质量（4096 图 q90 ≈2.5 MB）
+
     CORS_ORIGINS: str = "*"  # 逗号分隔；开发期默认全放开，上线由 P4 收紧
 
 

@@ -111,6 +111,14 @@ async def lifespan(app: FastAPI):
         _redis_state = {"state": "degraded", "message": f"Redis 启动器异常：{type(exc).__name__}: {exc}"}
         _logging.getLogger(__name__).warning(_redis_state["message"])
 
+    # v2.0 大点 04：回收上次进程被杀时留在 running 的采集任务（否则永远显示"采集中"）
+    try:
+        from src.ai.agent_scout import reap_stale_runs
+
+        reap_stale_runs()
+    except Exception:  # noqa: BLE001
+        _logging.getLogger(__name__).warning("回收僵尸采集任务失败", exc_info=True)
+
     # 启动横幅：uvicorn 只报「服务在 8000」，但用户实际打开的是 /safety 这个 SPA。
     base = (getattr(settings, "FRONT_BASE_URL", "") or "http://127.0.0.1:8000").rstrip("/")
     _logging.getLogger(__name__).info(

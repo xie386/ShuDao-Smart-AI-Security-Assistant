@@ -229,6 +229,7 @@ def test_report_gap_tool_accepts_once(monkeypatch):
 
     out1 = gap_tool.func("缺少矿洞装备配备要求")
     out2 = gap_tool.func("再提交一次")
-    assert "已受理" in out1 and calls == [(7, "矿洞作业要配哪些装备？")]
+    assert "已开始后台采集" in out1 and calls == [(7, "矿洞作业要配哪些装备？")]
+    assert "只有成功时才会生成" in out1          # 条件式，不得承诺一定进审核
     assert "已提交过一次" in out2 and len(calls) == 1     # 整轮只允许一次
     assert ctx["gap_report"]["accepted"] is True

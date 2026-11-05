@@ -47,6 +47,10 @@ class HazardService:
 
     @staticmethod
     def create(db: Session, data: HazardCreate, user_id: int) -> Hazard:
+        image_urls = list(data.image_urls or [])
+        # 裁定 4：上报时保存"前端渲染好圈后的图片"（服务端已烘焙，前端把地址一并发来）
+        if data.annotated_image and data.annotated_image not in image_urls:
+            image_urls.append(data.annotated_image)
         hazard = Hazard(
             title=data.title,
             description=data.description,
@@ -55,10 +59,18 @@ class HazardService:
             location=data.location,
             status="待处理",
             reporter_id=user_id,
-            image_urls=json.dumps(data.image_urls, ensure_ascii=False) if data.image_urls else None,
+            image_urls=json.dumps(image_urls, ensure_ascii=False) if image_urls else None,
         )
         db.add(hazard)
         db.flush()
+        # 裁定 5：AI 识别结果 + 坐标落 hazard_ai_analysis（同一事务，失败不影响上报）
+        if data.ai_analysis:
+            from src.services import hazard_analysis_service as _haz_ai
+
+            _haz_ai.persist(
+                db, hazard.id, data.ai_analysis, data.annotated_image,
+                generated_by="uploader", commit=False,
+            )
         HazardService._timeline(db, hazard.id, "上报", user_id, note="提交隐患上报")
         db.commit()
         db.refresh(hazard)
@@ -136,6 +148,7 @@ class HazardService:
         items = db.scalars(
             q.offset((page - 1) * page_size).limit(page_size)
         ).all()
+        HazardService.attach_ai(db, items)
 
         return HazardListOut(
             total=total,
@@ -143,6 +156,30 @@ class HazardService:
             page_size=page_size,
             items=[HazardOut.model_validate(h) for h in items],
         )
+
+    @staticmethod
+    def attach_ai(db: Session, hazards: list) -> None:
+        """给隐患对象挂 `annotated_url`（裁定 7：列表要显示标注图缩略图）。
+
+        批量取每个隐患**最新一次** AI 分析，避免 N+1；查不到就留空（前端回落原图）。
+        """
+        from src.models.hazard_ai import HazardAiAnalysis
+
+        ids = [h.id for h in hazards if getattr(h, "id", None)]
+        if not ids:
+            return
+        rows = db.scalars(
+            select(HazardAiAnalysis)
+            .where(HazardAiAnalysis.hazard_id.in_(ids))
+            .order_by(HazardAiAnalysis.id.asc())
+        ).all()
+        latest: dict[int, HazardAiAnalysis] = {}
+        for r in rows:                      # 升序覆盖 → 得到每个 hazard 的最后一条
+            latest[r.hazard_id] = r
+        for h in hazards:
+            row = latest.get(h.id)
+            h.annotated_url = row.annotated_url if row else None
+            h.ai_hazards = None
 
     # ---------- H03 详情 ----------
 

@@ -90,6 +90,8 @@ def _make_tools():
         ctx = _current_run_ctx()
         if ctx is None:
             return "（没有可用的运行上下文，无法提交）"
+        if ctx.get("supplement_done"):
+            return "（本轮系统已完成一次同步资料补充，资料已在你手上，请直接用现有【参考资料】回答）"
         if ctx.get("gap_calls", 0) >= 1:
             return "（本轮已提交过一次资料补充，请继续用现有资料回答）"
         question = (ctx.get("question") or "").strip()
@@ -104,10 +106,13 @@ def _make_tools():
             logger.warning("提交资料补充失败: %s", exc)
             return "（提交失败，请基于现有资料回答）"
         ctx["gap_report"] = {"reason": reason, "accepted": accepted}
+        if not accepted:
+            return "（相同问题的采集任务已在后台进行，请基于现有资料回答）"
+        # 只说"已开始"，不说"会进入审核"：采集可能无可用材料（insufficient）或失败，
+        # 那种情况下**不会**产生任何待审记录，结果会通过站内消息告知提问者。
         return (
-            "已受理：后台将按方法论上网采集资料并提交管理员审核"
-            if accepted
-            else "已受理（相同问题的采集任务已在进行中）"
+            "已开始后台采集（异步）。注意：采集可能失败或材料不足，只有成功时才会生成一条"
+            "「待审核」的 Agent 贡献，且必须管理员审核通过后才可检索；不会自动入库。"
         )
 
     return [retrieve_more, report_knowledge_gap]

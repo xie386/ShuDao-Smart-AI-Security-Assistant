@@ -340,14 +340,19 @@ def _fetch_pdf(url: str, keywords: list[str]) -> Page | None:
         return None
 
 
-def _collect(queries: list[str], gap_question: str = "") -> CollectResult:
-    """搜索 → 相关性过滤 → 抽正文 → （必要时）跟进 PDF。全部限额。"""
+def _collect(queries: list[str], gap_question: str = "", *, max_pages: int | None = None,
+             max_sites: int | None = None, timeout_s: float | None = None) -> CollectResult:
+    """搜索 → 相关性过滤 → 抽正文 → （必要时）跟进 PDF。全部限额。
+
+    同步补料会传更小的 `max_pages/max_sites/timeout_s`（回答在等，不能按异步那套跑 5 分钟）。
+    """
     from playwright.sync_api import sync_playwright
 
     result = CollectResult()
     keywords = _keywords(gap_question or " ".join(queries))
-    max_pages = settings.KB_FETCH_MAX_PAGES
-    deadline = time.time() + settings.KB_FETCH_TIMEOUT_S
+    page_cap = int(max_pages or settings.KB_FETCH_MAX_PAGES)
+    site_cap = int(max_sites or settings.KB_FETCH_MAX_SITES)
+    deadline = time.time() + float(timeout_s or settings.KB_FETCH_TIMEOUT_S)
     seen_hosts: set[str] = set()
 
     with sync_playwright() as pw:
@@ -357,7 +362,7 @@ def _collect(queries: list[str], gap_question: str = "") -> CollectResult:
 
         candidates: list[str] = []
         for q in queries:
-            if time.time() > deadline or len(candidates) >= max_pages:
+            if time.time() > deadline or len(candidates) >= page_cap:
                 break
             links = _search_links(page, q)
             if not links:
@@ -369,11 +374,11 @@ def _collect(queries: list[str], gap_question: str = "") -> CollectResult:
                 host = urllib.parse.urlparse(link).hostname or ""
                 if _host_quality(link) < 0 and not _is_search_host(host):
                     continue  # 软黑名单直接跳过（搜索跳转链接除外，落地后再判）
-                if host in seen_hosts and len(seen_hosts) >= settings.KB_FETCH_MAX_SITES:
+                if host in seen_hosts and len(seen_hosts) >= site_cap:
                     continue
                 seen_hosts.add(host)
                 candidates.append(link)
-                if len(candidates) >= max_pages or len(seen_hosts) >= settings.KB_FETCH_MAX_SITES:
+                if len(candidates) >= page_cap or len(seen_hosts) >= site_cap:
                     break
 
         pdf_done = False
@@ -561,6 +566,134 @@ def _knowledge_quality(md: str, min_chars: int) -> tuple[bool, str]:
     return True, f"{chars} 字 / {bullets} 条 / 来源 {total_urls} 条"
 
 
+# --------------------------------------------------------------------------- #
+# 同步补料：先补再答（v2.0 大点 04 v1.4）
+# --------------------------------------------------------------------------- #
+def _cache_key(question: str) -> str:
+    import hashlib
+
+    return "shudao:scout:sync:" + hashlib.sha1((question or "").strip().encode("utf-8")).hexdigest()[:24]
+
+
+def _cache_get(question: str) -> dict | None:
+    try:
+        from src.core.redis_client import redis_client
+
+        raw = redis_client.get(_cache_key(question))
+        if not raw:
+            return None
+        import json
+
+        data = json.loads(raw)
+        return data if data.get("md") else None
+    except Exception:  # noqa: BLE001 —— 缓存失败不影响补料
+        return None
+
+
+def _cache_put(question: str, payload: dict) -> None:
+    try:
+        import json
+
+        from src.core.redis_client import redis_client
+
+        redis_client.setex(_cache_key(question), settings.SCOUT_SYNC_CACHE_TTL,
+                           json.dumps(payload, ensure_ascii=False))
+    except Exception:  # noqa: BLE001
+        logger.debug("同步补料缓存写入失败", exc_info=True)
+
+
+def run_sync(conversation_id: int, question: str) -> dict:
+    """同步补料：抓资料 → 总结 → （够长就）提交待审，然后**返回可引用的 md**。
+
+    与 `run()` 的区别：不放进后台线程、预算 60s、页数/站点更小、结果直接回给本轮回答。
+    返回：{ok, md, chars, pages, domains, contrib_id?, note, requested, cached}
+    """
+    from sqlalchemy import select
+
+    from src.core.db import SessionLocal
+    from src.models.agent import AgentClient
+    from src.services import agent_contrib_service, agent_docs
+
+    cached = _cache_get(question)
+    if cached:
+        logger.info("同步补料命中缓存（%d 字）", len(cached.get("md") or ""))
+        return {**cached, "ok": True, "cached": True}
+
+    run_id = _record_start(conversation_id, question)
+    budget = float(settings.SCOUT_SYNC_TIMEOUT)
+    t0 = time.time()
+    try:
+        methodology = agent_docs.read(agent_docs.METHODOLOGY)["content"]
+        queries = _plan_queries(question, methodology)
+        # 60s 是"回答能等"的总预算：采集中途要留 ~15s 给 LLM 总结，否则总时长会溢出
+        collect_budget = max(20.0, budget - 15.0)
+        collected = _collect(
+            queries, question,
+            max_pages=settings.SCOUT_SYNC_MAX_PAGES,
+            max_sites=settings.SCOUT_SYNC_MAX_SITES,
+            timeout_s=collect_budget,
+        )
+        if not collected.pages:
+            note = "；".join(collected.errors)[:200] or "没有抓到可用正文"
+            _record_finish(run_id, conversation_id, question, status="failed",
+                           urls=collected.visited, note=f"同步补料未采到：{note}")
+            return {"ok": False, "note": note, "pages": 0, "requested": len(queries)}
+
+        md = _summarize(question, collected.pages)
+        if md.strip() == "INSUFFICIENT":
+            _record_finish(run_id, conversation_id, question, status="insufficient",
+                           urls=collected.visited, note="同步补料：材料不足以成文")
+            return {"ok": False, "note": "材料不足以成文", "pages": len(collected.pages)}
+
+        md = _with_provenance(_strip_links(md), collected.pages)
+        chars = len(md)
+        if chars < settings.SCOUT_SYNC_MIN_CHARS:
+            _record_finish(run_id, conversation_id, question, status="insufficient",
+                           urls=collected.visited, note=f"同步补料仅 {chars} 字，未达引用门槛")
+            return {"ok": False, "note": f"仅 {chars} 字，材料偏少", "pages": len(collected.pages)}
+
+        domains = sorted({(urllib.parse.urlparse(p.url).hostname or "") for p in collected.pages})
+        payload = {"md": md, "chars": chars, "pages": len(collected.pages), "domains": domains,
+                   "contrib_id": None, "note": "", "requested": len(queries)}
+
+        # 够 1000 字才进人审队列（与人工贡献同一门槛）；不够只用于本轮回答
+        if chars >= settings.KB_CONTRIB_MIN_CHARS:
+            db = SessionLocal()
+            try:
+                agent_row = db.scalar(select(AgentClient).where(AgentClient.name == "knowledge_scout"))
+                agent = {"id": agent_row.id if agent_row else None, "name": "knowledge_scout",
+                         "model": settings.DEEPSEEK_MODEL}
+                contrib = agent_contrib_service.submit_agent(
+                    db,
+                    title=(md.splitlines()[0] or "").lstrip("# ").strip()[:120] or question[:60],
+                    doc_type="procedures",
+                    intro=f"问答同步补料：针对「{question[:60]}」，来源 {len(collected.pages)} 篇。",
+                    md=md,
+                    agent=agent,
+                    origin_urls=[p.url for p in collected.pages],
+                )
+                payload["contrib_id"] = contrib.id
+            except Exception as exc:  # noqa: BLE001 —— 提交失败不影响本轮引用
+                logger.warning("同步补料提交失败（仍可引用）：%s", exc)
+                payload["note"] = f"提交待审失败：{type(exc).__name__}"
+            finally:
+                db.close()
+        else:
+            payload["note"] = f"{chars} 字未达 1000 字入库门槛，仅本轮引用"
+
+        _record_finish(run_id, conversation_id, question, status="submitted" if payload["contrib_id"] else "insufficient",
+                       urls=collected.visited, contrib_id=payload["contrib_id"],
+                       note=f"同步补料 {chars} 字 / {len(collected.pages)} 篇 / {time.time() - t0:.0f}s")
+        _cache_put(question, payload)
+        logger.info("同步补料完成：%d 字 / %d 篇 / %.0fs", chars, len(collected.pages), time.time() - t0)
+        return {**payload, "ok": True}
+    except Exception as exc:  # noqa: BLE001 —— 补料失败不能拖垮回答
+        logger.warning("同步补料失败：%s", exc, exc_info=True)
+        _record_finish(run_id, conversation_id, question, status="failed",
+                       note=f"同步补料异常：{type(exc).__name__}: {str(exc)[:120]}")
+        return {"ok": False, "note": f"{type(exc).__name__}: {str(exc)[:80]}", "pages": 0}
+
+
 def _record_start(conversation_id: int, question: str) -> int | None:
     """采集一开始就建一条 `running` 任务（方案：建任务 → 可回放）。"""
     from src.core.db import SessionLocal
@@ -615,11 +748,30 @@ def _record_finish(run_id: int | None, conversation_id: int, question: str, *,
         db.close()
 
 
-def _notify_asker(conversation_id: int, gap_question: str, contrib_id: int) -> None:
-    """告诉提问者：你的问题触发了资料补充，已提交管理员审核。"""
-    try:
-        from sqlalchemy import select
+def _gap_notice(kind: str, question: str, contrib_id: int | None = None, detail: str = "") -> str:
+    """给提问者的回执文案（纯函数，便于测试）。
 
+    kind: `submitted`（已提交待审）/ `insufficient`（材料不足，未提交）/ `failed`（采集或提交失败）。
+    """
+    short = (question or "").strip()[:30]
+    if kind == "submitted":
+        return (f"【资料补充待审】已针对「{short}」自动采集公开资料并提交（贡献 #{contrib_id}），"
+                f"管理员审核通过后即可在问答中检索到。")
+    if kind == "insufficient":
+        why = f"（{detail}）" if detail else ""
+        return (f"【资料补充未成文】已针对「{short}」尝试采集，但材料不足以写成知识条目{why}，"
+                f"**未生成待审记录**。你可以在「贡献知识」上传更权威的资料（规程/标准原文）。")
+    why = f"：{detail}" if detail else ""
+    return (f"【资料补充失败】针对「{short}」的后台采集未成功{why}，**未生成待审记录**。"
+            f"可稍后重试，或在「贡献知识」上传相关资料。")
+
+
+def _notify_asker(conversation_id: int, gap_question: str, contrib_id: int | None = None,
+                  *, kind: str = "submitted", detail: str = "") -> None:
+    """把采集结果回执给提问者（成功/不足/失败都发，避免"以为被提交了"）。"""
+    if conversation_id is None or conversation_id <= 0:
+        return  # 探针/离线任务的负数会话不通知
+    try:
         from src.core.db import SessionLocal
         from src.models.conversation import Conversation
         from src.services.notification_service import TYPE_KB_CONTRIB, NotificationService
@@ -631,14 +783,41 @@ def _notify_asker(conversation_id: int, gap_question: str, contrib_id: int) -> N
                 return
             NotificationService.push(
                 conv.user_id,
-                f"【资料补充待审】已针对「{gap_question[:30]}」自动采集公开资料并提交（贡献 #{contrib_id}），"
-                f"管理员审核通过后即可在问答中检索到。",
+                _gap_notice(kind, gap_question, contrib_id, detail),
                 msg_type=TYPE_KB_CONTRIB,
             )
         finally:
             db.close()
     except Exception:  # noqa: BLE001 —— 通知失败不影响采集结果
         logger.debug("通知提问者失败", exc_info=True)
+
+
+def reap_stale_runs(minutes: int = 15) -> int:
+    """把上次进程被杀时留在 `running` 的任务收尾（否则永远显示"采集中"）。
+
+    返回回收条数。失败只记日志，不阻塞启动。
+    """
+    from sqlalchemy import text
+
+    from src.core.db import engine
+
+    try:
+        with engine.begin() as conn:
+            res = conn.execute(
+                text(
+                    "UPDATE agent_runs SET status='failed', "
+                    "note=CONCAT(COALESCE(note, ''), '｜进程中断（启动时回收）') "
+                    "WHERE status='running' AND created_at < (NOW() - INTERVAL :m MINUTE)"
+                ),
+                {"m": int(minutes)},
+            )
+        n = res.rowcount or 0
+        if n:
+            logger.info("回收僵尸 agent_runs：%d 条", n)
+        return n
+    except Exception:  # noqa: BLE001
+        logger.warning("回收僵尸 agent_runs 失败", exc_info=True)
+        return 0
 
 
 def _methodology_version() -> str:
@@ -679,6 +858,7 @@ def run(conversation_id: int, gap_question: str) -> dict:
         _record_finish(run_id, conversation_id, gap_question, status="failed",
                        urls=collected.visited,
                        note="；".join(collected.errors)[:500] or "没有抓到可用正文")
+        _notify_asker(conversation_id, gap_question, kind="failed", detail="没有抓到可用正文")
         return {"ok": False, "reason": "no_pages", "visited": collected.visited}
 
     md = _summarize(gap_question, collected.pages)
@@ -692,6 +872,7 @@ def run(conversation_id: int, gap_question: str) -> dict:
             )
         except Exception:  # noqa: BLE001
             logger.debug("案例回写失败", exc_info=True)
+        _notify_asker(conversation_id, gap_question, kind="insufficient", detail="模型判定材料不足以成文")
         return {"ok": False, "reason": "insufficient", "note": "model_insufficient"}
 
     md = _strip_links(md)
@@ -723,6 +904,7 @@ def run(conversation_id: int, gap_question: str) -> dict:
             )
         except Exception:  # noqa: BLE001
             logger.debug("案例回写失败", exc_info=True)
+        _notify_asker(conversation_id, gap_question, kind="insufficient", detail=why_doc)
         return {"ok": False, "reason": "low_quality", "note": why_doc}
 
     body_chars = len(md)
@@ -744,10 +926,12 @@ def run(conversation_id: int, gap_question: str) -> dict:
         except Exception as exc:  # noqa: BLE001
             _record_finish(run_id, conversation_id, gap_question, status="failed",
                            urls=collected.visited, note=f"提交失败：{exc}")
+            _notify_asker(conversation_id, gap_question, kind="failed", detail=f"提交失败：{exc}")
             raise
     finally:
         db.close()
 
+    _notify_asker(conversation_id, gap_question, contrib.id, kind="submitted")
     _record_finish(run_id, conversation_id, gap_question, status="submitted",
                    urls=collected.visited, contrib_id=contrib.id, md_path=contrib.file_path,
                    note=f"{body_chars} 字 / {len(collected.pages)} 篇")
