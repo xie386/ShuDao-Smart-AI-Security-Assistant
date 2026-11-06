@@ -13,6 +13,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
 from src.models.hazard import Hazard, HazardTimeline
 from src.models.user import User
 from src.schemas.hazard import (
@@ -26,6 +27,7 @@ from src.schemas.hazard import (
 from src.services.notification_service import (
     NotificationService,
     TYPE_ACCEPT,
+    TYPE_ASSIGN,
     TYPE_FINAL,
     TYPE_RECTIFY,
     TYPE_REPORT,
@@ -220,6 +222,7 @@ class HazardService:
             data.assignee_id,
             f"【隐患整改】您有一条整改任务：{hazard.title}（隐患 #{hazard.id}）",
             hazard_id=hazard.id,
+            msg_type=TYPE_ASSIGN,
         )
         return hazard
 
@@ -240,13 +243,7 @@ class HazardService:
         HazardService._timeline(db, hazard.id, "整改反馈", user["id"], note=data.rectify_measures[:100])
         db.commit()
         db.refresh(hazard)
-        # H08：通知上报人「待验收」+ 通知管理员「收到整改反馈」
-        NotificationService.push(
-            hazard.reporter_id,
-            f"【隐患待验收】您上报的隐患已整改完成：{hazard.title}（隐患 #{hazard.id}）",
-            hazard_id=hazard.id,
-            msg_type=TYPE_RECTIFY,
-        )
+        # H08（07 口径）：整改反馈只通知 admin；上报人只收「最终处理」，不再收「待验收」
         # 管理员收到整改反馈（可验收）
         admins = db.execute(select(User.id).where(User.role == "admin")).scalars().all()
         for admin_id in admins:
@@ -270,36 +267,62 @@ class HazardService:
         HazardService._timeline(db, hazard.id, action, operator["id"], note=data.note)
         db.commit()
         db.refresh(hazard)
-        # H08：通知责任人与上报人「验收结果」+ 通知安全员/管理员 + 最终处理结果广播
-        note_text = f"验收{'通过' if data.approved else '驳回'}"
-        # ① 责任人与上报人（当事人）
-        for uid in {hazard.assignee_id, hazard.reporter_id} - {None}:
-            NotificationService.push(
-                uid,
-                f"【隐患{note_text}】{hazard.title}（隐患 #{hazard.id}）" + (f"：{data.note}" if data.note else ""),
-                hazard_id=hazard.id,
-                msg_type=TYPE_ACCEPT,
-            )
-        # ② 安全员/管理员（验收结果通知，当事人除外）
+        # ---------------- H08（v2.0 大点 07 重写 · 裁定 3/4） ----------------
+        # 验收通过：清上报/整改/派单消息 + 清掉堆积的驳回 → 发「验收通过」(1 天) 与「最终处理」(1 天)
+        #           → 写记录表（幂等）
+        # 验收驳回：只给被派单的责任人发「验收结果·驳回」，**不限期**堆积；不发最终处理
         managers = db.execute(
             select(User.id).where(User.role.in_(["admin", "safety_officer"]))
         ).scalars().all()
-        for mid in set(managers) - {hazard.assignee_id, hazard.reporter_id}:
+        admins = db.execute(select(User.id).where(User.role == "admin")).scalars().all()
+        assignee = hazard.assignee_id
+        reporter = hazard.reporter_id
+        note_text = f"验收{'通过' if data.approved else '驳回'}"
+
+        if not data.approved:
+            # 驳回：只有责任人知道，消息留着等下次通过时一次性清掉
             NotificationService.push(
-                mid,
-                f"【验收结果】隐患 {hazard.title}（#{hazard.id}）{note_text}" + (f"：{data.note}" if data.note else ""),
+                assignee,
+                f"【验收驳回】{hazard.title}（隐患 #{hazard.id}）" + (f"：{data.note}" if data.note else ""),
                 hazard_id=hazard.id,
                 msg_type=TYPE_ACCEPT,
+                status="rejected",
             )
-        # ③ 最终处理结果（上报人/责任人/安全员/管理员全员）
-        final_text = f"【最终处理结果】隐患 {hazard.title}（#{hazard.id}）{target}" + (f"：{data.note}" if data.note else "")
-        for uid in {hazard.assignee_id, hazard.reporter_id} | set(managers) - {None}:
+            return hazard
+
+        # —— 通过：清消息 ——
+        # 上报/整改/派单三类不看也会过期，闭环即删（用户口径）；发给 admin 与派单人
+        clear_users = set(admins) | {assignee}
+        NotificationService.drop_for_users(
+            clear_users, hazard_id=hazard.id, types=["report", "rectify", "assign"]
+        )
+        # 责任人处该隐患此前堆积的「驳回」全部删掉
+        NotificationService.drop(assignee, hazard_id=hazard.id, types=[TYPE_ACCEPT], status="rejected")
+
+        ttl = int(getattr(settings, "NOTIFY_TTL_DAY", 86400))
+        # ① 验收通过 → 被派单的责任人（1 天）
+        NotificationService.push(
+            assignee,
+            f"【验收通过】{hazard.title}（隐患 #{hazard.id}）" + (f"：{data.note}" if data.note else ""),
+            hazard_id=hazard.id,
+            msg_type=TYPE_ACCEPT,
+            status="passed",
+            ttl=ttl,
+        )
+        # ② 最终处理 → 上报人（任意角色）+ 全部 admin（1 天）
+        final_users = {reporter, *admins} - {None}
+        final_text = f"【最终处理结果】{hazard.title}（隐患 #{hazard.id}）{hazard.status}" + (
+            f"：{data.note}" if data.note else ""
+        )
+        for uid in final_users:
             NotificationService.push(
-                uid,
-                final_text,
-                hazard_id=hazard.id,
-                msg_type=TYPE_FINAL,
+                uid, final_text, hazard_id=hazard.id, msg_type=TYPE_FINAL, ttl=ttl
             )
+
+        # ③ 记录落库（验收事务已提交；失败只记日志）
+        from src.services import record_service
+
+        record_service.record_hazard_closed(db, hazard)
         return hazard
 
     # ---------- 内部工具 ----------

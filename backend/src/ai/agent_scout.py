@@ -785,6 +785,8 @@ def _notify_asker(conversation_id: int, gap_question: str, contrib_id: int | Non
                 conv.user_id,
                 _gap_notice(kind, gap_question, contrib_id, detail),
                 msg_type=TYPE_KB_CONTRIB,
+                contrib_id=contrib_id,
+                ttl=int(getattr(settings, "NOTIFY_TTL_DAY", 86400)),
             )
         finally:
             db.close()

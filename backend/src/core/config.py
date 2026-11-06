@@ -166,6 +166,8 @@ class Settings(BaseSettings):
 
     # ---- CORS ----
     # ---------------- 06 AI 隐患识别（v2.0 大点 06） ----------------
+    NOTIFY_MAX_PER_USER: int = 500          # 07：单用户消息上限（超出淘汰最旧）
+    NOTIFY_TTL_DAY: int = 86400            # 07：短期消息保留时长（final/accept通过/知识贡献）
     HAZARD_AGENT_ENABLED: bool = True       # 关掉 → 退回"视觉模型自己写建议"（旧行为，回滚用）
     HAZARD_WEB_FILL_ENABLED: bool = True    # 知识库缺口是否同步网搜补料
     HAZARD_GAP_THRESHOLD: float = 0.65      # Top1 低于此值判定"依据不足"（实测空档 0.61~0.88）

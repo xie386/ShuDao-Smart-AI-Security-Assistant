@@ -62,6 +62,7 @@ _logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 from src.routers import (
+    records,
     auth,
     chat,
     exam,
@@ -201,6 +202,7 @@ app.include_router(hazards.router)
 app.include_router(chat.router)
 app.include_router(uploads.router)
 app.include_router(notifications.router)
+app.include_router(records.router)
 app.include_router(stats.router)
 app.include_router(vision.router)
 app.include_router(kb.router)

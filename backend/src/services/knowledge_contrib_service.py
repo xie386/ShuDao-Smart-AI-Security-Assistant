@@ -150,11 +150,14 @@ class KnowledgeContribService:
         db.refresh(contrib)
         # H08：通知全部 admin（有待审贡献）
         admins = db.execute(select(User.id).where(User.role == "admin")).scalars().all()
+        ttl = int(getattr(settings, "NOTIFY_TTL_DAY", 86400))
         for admin_id in admins:
             NotificationService.push(
                 admin_id,
                 f"【知识待审】用户 #{user_id} 贡献知识：{contrib.title}（贡献 #{contrib.id}），请审核",
                 msg_type=TYPE_KB_CONTRIB,
+                contrib_id=contrib.id,
+                ttl=ttl,
             )
         return contrib
 
@@ -318,13 +321,23 @@ class KnowledgeContribService:
             except Exception:  # noqa: BLE001 —— 案例回写失败不影响审核结果
                 logger.warning("案例库回写失败 contrib=%s", contrib.id, exc_info=True)
 
-        # H08：通知上传者（进度可见）
-        NotificationService.push(
-            contrib.contributor_id,
-            f"【知识{'已入库' if data.approved else '被驳回'}】您的贡献 {contrib.title}（贡献 #{contrib.id}）"
-            + (f"：{data.note}" if data.note else ""),
-            msg_type=TYPE_KB_CONTRIB,
-        )
+        # H08（07 口径）：通知贡献者（Agent 贡献不发消息，也没有可读界面）；Redis 存 1 天
+        ttl = int(getattr(settings, "NOTIFY_TTL_DAY", 86400))
+        if getattr(contrib, "source_kind", "user") != "agent":
+            NotificationService.push(
+                contrib.contributor_id,
+                f"【知识{'已入库' if data.approved else '被驳回'}】您的贡献 {contrib.title}（贡献 #{contrib.id}）"
+                + (f"：{data.note}" if data.note else ""),
+                msg_type=TYPE_KB_CONTRIB,
+                contrib_id=contrib.id,
+                ttl=ttl,
+                status="passed" if data.approved else "rejected",
+            )
+
+        # 记录落库（approved/rejected 都写；幂等）
+        from src.services import record_service
+
+        record_service.record_contrib(db, contrib)
         return contrib
 
     # ---------- K05 审核预筛（子智能体辅助，不写库） ----------

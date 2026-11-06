@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 def _build(url: str) -> redis.Redis:
     # protocol=2：redis-py 8.x 默认 RESP3 会发 HELLO 命令，老版本 Redis(<6.0) 不支持报
     # "unknown command `HELLO`"，强制 RESP2 兼容。
-    return redis.Redis.from_url(url, decode_responses=True, protocol=2)
+    return redis.Redis.from_url(
+        url,
+        decode_responses=True,
+        protocol=2,
+        socket_connect_timeout=1.0,   # Redis 挂了要"快失败"：否则 109 个收件人 × 2s 会拖死请求
+        socket_timeout=5.0,
+    )
 
 
 @lru_cache

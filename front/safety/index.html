@@ -565,6 +565,24 @@ tr .hz-thumb { width:54px; height:38px; object-fit:cover; border-radius:4px; bor
 .d-img-toggle { display:flex; gap:8px; margin-bottom:8px; }
 .d-img-toggle button { font-size:12px; padding:4px 10px; border:1px solid var(--border); border-radius:999px; background:#fff; cursor:pointer; }
 .d-img-toggle button.on { border-color:#B8860B; font-weight:600; }
+
+/* ===== v2.0 大点 07：消息与记录 ===== */
+.tabs { display:flex; gap:8px; margin-top:16px; border-bottom:1px solid var(--border); }
+.tabs .tab { padding:8px 16px; font-size:14px; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; color:var(--muted); }
+.tabs .tab.on { color:var(--ink); border-bottom-color:var(--primary); font-weight:600; }
+.tabs .tab span { margin-left:4px; color:var(--primary); font-size:12px; }
+.notify-item { display:flex; justify-content:space-between; gap:12px; padding:11px 14px; border-bottom:1px solid var(--border); font-size:13.5px; cursor:pointer; border-left:3px solid transparent; }
+.notify-item:hover { background:#FCF9F4; }
+.notify-item.unread { background:#FFFDF7; border-left-color:var(--gold); }
+.notify-item.read { opacity:.72; }
+.notify-item .ni-body { flex:1; line-height:1.6; }
+.rec-item { padding:12px 14px; border-bottom:1px solid var(--border); cursor:pointer; line-height:1.7; }
+.rec-item:hover { background:#FCF9F4; }
+.rec-item .hint { font-size:12.5px; }
+.rec-sec { margin:14px 0; }
+.rec-sec h4 { font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:600; }
+.rec-tl { font-size:13px; line-height:1.9; }
+.rec-tl b { color:var(--ink); }
 </style>
 </head>
 <body>
@@ -600,7 +618,7 @@ tr .hz-thumb { width:54px; height:38px; object-fit:cover; border-radius:4px; bor
     <a href="#/hazards" class="nav-item" data-nav="hazards">隐患管理<span class="nav-glitch"></span></a>
     <a href="#/chat" class="nav-item" data-nav="chat">AI 助手<span class="nav-glitch"></span></a>
     <a href="#/ppt" class="nav-item" data-nav="ppt">PPT 工坊<span class="nav-glitch"></span></a>
-    <a href="#/notifications" class="nav-item" data-nav="notifications">消息 <span id="notify-badge"></span><span class="nav-glitch"></span></a>
+    <a href="#/notifications" class="nav-item" data-nav="notifications">消息与记录 <span id="notify-badge"></span><span class="nav-glitch"></span></a>
     <a href="#/exam" class="nav-item" data-nav="exam">考试工坊<span class="nav-glitch"></span></a>
     <a href="#/kb-contrib" class="nav-item" data-nav="kb-contrib">贡献知识<span class="nav-glitch"></span></a>
     <a href="#/profile" class="nav-item" data-nav="profile">个人主页<span class="nav-glitch"></span></a>
@@ -816,10 +834,40 @@ tr .hz-thumb { width:54px; height:38px; object-fit:cover; border-radius:4px; bor
     <!-- 通知 -->
     <div class="page" id="page-notifications">
       <div style="display:flex;justify-content:space-between;align-items:flex-end">
-        <div><div class="page-title">消息通知</div><div class="page-sub">H08 · 隐患流转相关通知</div></div>
-        <button class="btn btn-outline btn-sm" id="notify-clear">清空全部</button>
+        <div><div class="page-title">消息与记录</div><div class="page-sub">消息会随处理自动消失；记录保留已闭环隐患与知识贡献</div></div>
+        <button class="btn btn-outline btn-sm" id="notify-clear">清空消息</button>
       </div>
-      <div class="card" id="notify-list" style="margin-top:16px"></div>
+      <div class="tabs" id="mr-tabs">
+        <button class="tab on" data-tab="msg">消息<span id="mr-unread"></span></button>
+        <button class="tab" data-tab="rec">记录</button>
+      </div>
+      <div class="card" id="mr-msg" style="margin-top:16px"><div id="notify-list"></div></div>
+      <div id="mr-rec" style="display:none;margin-top:16px">
+        <div class="card">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <select id="rec-kind" style="width:150px">
+              <option value="">全部类型</option>
+              <option value="hazard_closed">闭环隐患</option>
+              <option value="kb_contrib">知识贡献</option>
+            </select>
+            <input id="rec-q" placeholder="搜索标题 / 摘要" style="flex:1;min-width:180px">
+            <button class="btn btn-primary btn-sm" id="rec-search">查询</button>
+          </div>
+          <div id="rec-list" style="margin-top:12px"></div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:12px">
+            <button class="btn btn-outline btn-sm" id="rec-prev">上一页</button>
+            <span id="rec-page" class="hint"></span>
+            <button class="btn btn-outline btn-sm" id="rec-next">下一页</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-mask hidden" id="modal-record">
+      <div class="modal" style="width:760px;max-height:84vh;overflow-y:auto">
+        <h3 id="rec-title">记录详情</h3>
+        <div id="rec-body"></div>
+        <div class="btns"><button class="btn" onclick="closeModal('modal-record')">关闭</button></div>
+      </div>
     </div>
 
     <!-- PPT 工坊 -->
@@ -1271,7 +1319,7 @@ async function doRegister() {
 function enterApp() {
   document.getElementById('login-view').classList.add('hidden');
   document.getElementById('app-view').classList.remove('hidden');
-  loadNotifyCount(); route();
+  loadNotifyCount(); startNotifyPolling(); route();
 }
 
 /* ============ 工作台横幅（D5 美化：问候语 + 日期） ============ */
@@ -1302,7 +1350,7 @@ function route() {
   else if (path === 'kb-contrib') { show('page-kb-contrib'); loadKbContribs(); kcLoadAgentDocs(); if (param) openKbContribDetail(parseInt(param,10)); }
   else if (path === 'profile') { show('page-profile'); loadProfile(); }
   else if (path === 'kb-doc') { show('page-kb-doc'); loadKbDoc(qs.get('path') || ''); }
-  else if (path === 'notifications') { show('page-notifications'); loadNotifies(); }
+  else if (path === 'notifications') { show('page-notifications'); switchMr(mrTab); loadNotifyCount(); }
   else show('page-dashboard');
 }
 function show(id) { const el = document.getElementById(id); if (el) el.classList.add('active'); }
@@ -2050,60 +2098,183 @@ async function send() {
   }
 }
 
-/* ============ 通知 ============ */
+/* ============ 消息与记录（v2.0 大点 07） ============ */
 // 消息类型 → 展示配置（图标/颜色/标签）
 const NOTIFY_TYPES = {
-  report:   { icon: '📥', label: '接收上报',   color: '#dc2626' },
-  assign:   { icon: '📋', label: '整改任务',   color: '#2563eb' },
-  rectify:  { icon: '✍️', label: '整改反馈',   color: '#d97706' },
-  accept:   { icon: '✅', label: '验收结果',   color: '#16a34a' },
-  final:    { icon: '🏁', label: '最终处理',   color: '#7c3aed' },
+  report:     { icon: '📥', label: '接收上报', color: '#dc2626' },
+  assign:     { icon: '📋', label: '整改任务', color: '#2563eb' },
+  rectify:    { icon: '✍️', label: '整改反馈', color: '#d97706' },
+  accept:     { icon: '🔎', label: '验收结果', color: '#7c3aed' },
+  final:      { icon: '🏁', label: '最终处理', color: '#16a34a' },
   kb_contrib: { icon: '📚', label: '知识贡献', color: '#A93226' },
-  general:  { icon: '📢', label: '通知',       color: '#6b7280' },
+  general:    { icon: '📢', label: '通知',     color: '#6b7280' },
 };
-async function loadNotifies() {
+let mrTab = 'msg', mrPoll = null;
+let recPage = 1, recPageSize = 10, recTotal = 0, recQ = '', recKind = '';
+
+function relTime(ts) {
+  if (!ts) return '';
+  const diff = Date.now() / 1000 - ts;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+  if (diff < 86400 * 30) return Math.floor(diff / 86400) + ' 天前';
+  return new Date(ts * 1000).toLocaleDateString('zh-CN');
+}
+function fullTime(ts) { return ts ? new Date(ts * 1000).toLocaleString('zh-CN', { hour12: false }) : ''; }
+
+async function loadNotifyCount() {
   try {
-    const r = await api('/api/notifications'); const d = await r.json();
-    const el = document.getElementById('notify-list');
-    el.innerHTML = '<h3 style="border-left:3px solid var(--primary);padding-left:10px;margin-bottom:8px">我的消息' + (d.unread?`（${d.unread} 未读）`:'') + '</h3>';
-    const items = d.items||[];
-    if (!items.length) { el.innerHTML += '<div class="empty-tip">暂无消息</div>'; return; }
-    // 按 type 分组（保持时间序）
+    const r = await api('/api/notifications/count');
+    const d = await r.json();
+    const b = document.getElementById('notify-badge');
+    if (b) b.textContent = d.unread ? `（${d.unread}）` : '';
+    const u = document.getElementById('mr-unread');
+    if (u) u.textContent = d.unread ? ` ${d.unread}` : '';
+  } catch (e) {}
+}
+
+/* 列表：进页面即把本页未读标已读（裁定 8） */
+async function loadNotifies() {
+  const el = document.getElementById('notify-list');
+  try {
+    const r = await api('/api/notifications?limit=100');
+    const d = await r.json();
+    const items = d.items || [];
+    if (!items.length) { el.innerHTML = '<div class="empty-tip">暂无消息</div>'; return; }
+    // 进页面即已读（裁定 8）：先把未读的标掉，但**本次渲染仍按"未读"高亮**，
+    // 让用户看得见哪几条是新的；下次刷新才变成已读样式。
+    const unreadIds = items.filter(m => !m.read).map(m => m.id);
+    if (unreadIds.length) {
+      api('/api/notifications/read', { method: 'POST', body: JSON.stringify({ ids: unreadIds }) })
+        .then(() => loadNotifyCount()).catch(() => {});
+    }
     const groups = {};
-    items.forEach(m => {
-      const msg = typeof m === 'string' ? { message: m, hazard_id: null, type: 'general' } : m;
-      const t = NOTIFY_TYPES[msg.type] || NOTIFY_TYPES.general;
-      (groups[msg.type || 'general'] = groups[msg.type || 'general'] || []).push({ msg, t });
-    });
+    items.forEach(m => { (groups[m.type || 'general'] = groups[m.type || 'general'] || []).push(m); });
     let html = '';
-    for (const [gtype, list] of Object.entries(groups)) {
+    // 分组按"该组最新一条"倒序，避免「1 分钟前」排在「2 小时前」后面
+    const ordered = Object.entries(groups).sort(
+      (a, b) => Math.max(...b[1].map(m => m.created_at || 0)) - Math.max(...a[1].map(m => m.created_at || 0))
+    );
+    for (const [gtype, list] of ordered) {
       const t = NOTIFY_TYPES[gtype] || NOTIFY_TYPES.general;
-      html += `<div class="notify-group" style="margin-top:12px"><span class="notify-group-label" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:${t.color}">${t.icon} ${t.label}<span style="background:${t.color}22;color:${t.color};border-radius:8px;padding:0 8px;font-size:12px">${list.length}</span></span>`;
-      list.forEach(({ msg, t: tt }) => {
-        const hid = msg.hazard_id;
-        // 知识贡献消息：文本内嵌「贡献 #id」，解析为跳转链接（贡献详情页）
-        let body;
-        if (msg.type === 'kb_contrib') {
-          const m = (msg.message || '').match(/贡献 #(\d+)/);
-          body = m ? `<a href="#/kb-contrib/${m[1]}" style="color:var(--primary);text-decoration:none;font-weight:600">${esc(msg.message)} → 查看贡献</a>` : esc(msg.message);
-        } else {
-          body = hid ? `<a href="#/hazard/${hid}" style="color:var(--primary);text-decoration:none;font-weight:600">${esc(msg.message)} → 查看隐患</a>` : esc(msg.message);
-        }
-        html += `<div class="notify-item" style="border-left:3px solid ${tt.color};padding-left:12px"><span>${body}</span></div>`;
+      html += `<div class="notify-group" style="margin-top:10px"><span class="notify-group-label" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:${t.color}">${t.icon} ${t.label}<span style="background:${t.color}22;color:${t.color};border-radius:8px;padding:0 8px;font-size:12px">${list.length}</span></span>`;
+      list.forEach(m => {
+        const jump = m.contrib_id ? `#/kb-contrib/${m.contrib_id}` : (m.hazard_id ? `#/hazard/${m.hazard_id}` : '');
+        html += `<div class="notify-item ${m.read ? 'read' : 'unread'}" ${jump ? `onclick="location.hash='${jump}'"` : ''}>
+          <span class="ni-body">${esc(m.message)}${jump ? ' <span style="color:var(--primary)">→ 查看</span>' : ''}</span>
+          <span class="notify-time" title="${fullTime(m.created_at)}">${relTime(m.created_at)}</span></div>`;
       });
       html += '</div>';
     }
-    el.innerHTML += html;
-  } catch(e){}
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="empty-tip">消息加载失败</div>';
+  }
 }
-async function loadNotifyCount() {
-  try { const r = await api('/api/notifications'); const d = await r.json();
-    const b = document.getElementById('notify-badge');
-    b.textContent = d.unread ? `（${d.unread}）` : ''; } catch(e){}
+
+/* tab 切换 */
+function switchMr(tab) {
+  mrTab = tab === 'rec' ? 'rec' : 'msg';
+  document.querySelectorAll('#mr-tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === mrTab));
+  document.getElementById('mr-msg').style.display = mrTab === 'msg' ? 'block' : 'none';
+  document.getElementById('mr-rec').style.display = mrTab === 'rec' ? 'block' : 'none';
+  document.getElementById('notify-clear').style.display = mrTab === 'msg' ? 'inline-flex' : 'none';
+  if (mrTab === 'rec') loadRecords(); else loadNotifies();
 }
+
+/* 30s 轮询（裁定 9）：页面不可见时跳过 */
+function startNotifyPolling() {
+  if (mrPoll) clearInterval(mrPoll);
+  mrPoll = setInterval(() => {
+    if (document.hidden || !token) return;
+    loadNotifyCount();
+    if (curPage === 'notifications' && mrTab === 'msg') loadNotifies();
+  }, 30000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  loadNotifyCount();
+  if (curPage === 'notifications' && mrTab === 'msg') loadNotifies();
+});
+
+/* 记录 */
+async function loadRecords() {
+  const el = document.getElementById('rec-list');
+  el.innerHTML = '<div class="empty-tip">加载中…</div>';
+  const params = new URLSearchParams({ page: recPage, page_size: recPageSize });
+  if (recKind) params.set('kind', recKind);
+  if (recQ) params.set('q', recQ);
+  try {
+    const r = await api('/api/records?' + params);
+    const d = await r.json();
+    recTotal = d.total || 0;
+    const items = d.items || [];
+    if (!items.length) { el.innerHTML = '<div class="empty-tip">暂无记录</div>'; }
+    else el.innerHTML = items.map(x => `<div class="rec-item" onclick="openRecord(${x.id})">
+        <span class="badge ${x.kind === 'hazard_closed' ? '已闭环' : '已入库'}" style="margin-right:8px">${x.kind === 'hazard_closed' ? '闭环隐患' : '知识贡献'}</span>
+        <b>${esc(x.title)}</b>
+        <div class="hint">${esc(x.summary || '')}</div>
+        <div class="notify-time" style="margin-left:0">${esc((x.created_at || '').slice(0, 16))}</div></div>`).join('');
+    document.getElementById('rec-page').textContent = `第 ${recPage} 页 · 共 ${recTotal} 条`;
+    document.getElementById('rec-prev').disabled = recPage <= 1;
+    document.getElementById('rec-next').disabled = recPage * recPageSize >= recTotal;
+  } catch (e) {
+    el.innerHTML = '<div class="empty-tip">记录加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+function renderRecordPayload(d) {
+  const p = d.payload || {};
+  if (d.kind === 'hazard_closed') {
+    const h = p.hazard || {}, r = p.rectify || {}, a = p.accept || {};
+    let html = `<div class="hint">${esc(d.summary || '')}</div>`;
+    html += `<div class="rec-sec"><h4>隐患</h4><div>#${h.id} ${esc(h.title || '')} · ${esc(h.level || '')} · ${esc(h.hazard_type || '未分类')} · ${esc(h.location || '-')}</div>`;
+    html += `<div class="hint">上报人 #${h.reporter_id} ｜ 整改人 #${h.assignee_id || '-'} ｜ ${esc(h.created_at || '')}</div>`;
+    html += `<div style="margin-top:6px">${esc(h.description || '')}</div></div>`;
+    html += `<div class="rec-sec"><h4>处理过程（驳回 ${a.reject_count || 0} 次）</h4><div class="rec-tl">` +
+      (p.timeline || []).map(t => `<div><b>${esc(t.action)}</b> · 操作人 #${t.operator_id || '-'} · ${esc(t.created_at || '')}${t.note ? ` · ${esc(t.note)}` : ''}</div>`).join('') +
+      `</div></div>`;
+    html += `<div class="rec-sec"><h4>整改 / 验收</h4><div class="rec-tl">整改措施：${esc(r.measures || '-')}<br>验收意见：${esc(a.note || '-')}（${esc(a.at || '')}）</div></div>`;
+    const ai = p.ai;
+    if (ai && (ai.hazards || []).length) {
+      html += `<div class="rec-sec"><h4>AI 识别建议</h4><div class="rec-tl">` + ai.hazards.map((x, i) =>
+        `<div>#${i + 1} [${esc(x.level || '')}] ${esc(x.category || '')}：${esc(x.description || '')}` +
+        (x.suggestion ? `<br><span class="hint">建议：${esc(x.suggestion)}</span>` : '') + `</div>`).join('') + `</div></div>`;
+      if (ai.annotated_url) html += `<div style="margin-top:8px"><img src="${ai.annotated_url}" style="max-width:100%;border-radius:6px" onclick="window.open('${ai.annotated_url}')"></div>`;
+    }
+    return html;
+  }
+  const c = p.contrib || {}, rv = p.review || {};
+  return `<div class="hint">${esc(d.summary || '')}</div>
+    <div class="rec-sec"><h4>贡献</h4><div>#${c.id} ${esc(c.title || '')}</div>
+    <div class="hint">类型 ${esc(c.doc_type || '')} ｜ 来源 ${esc(c.source_kind || 'user')} ｜ 贡献者 #${c.contributor_id || '-'} ｜ 入库 ${c.chunk_count || 0} 块</div></div>
+    <div class="rec-sec"><h4>审核</h4><div>${esc(rv.status || '')}${rv.note ? '：' + esc(rv.note) : ''}<div class="hint">审核人 #${rv.by || '-'} · ${esc(rv.at || '')}</div></div></div>`;
+}
+
+async function openRecord(id) {
+  try {
+    const r = await api('/api/records/' + id);
+    const d = await r.json();
+    document.getElementById('rec-title').textContent = (d.kind === 'hazard_closed' ? '闭环隐患' : '知识贡献') + ' #' + d.ref_id;
+    document.getElementById('rec-body').innerHTML = renderRecordPayload(d);
+    openModal('modal-record');
+  } catch (e) { alert('加载失败：' + e.message); }
+}
+
+/* 事件绑定 */
+document.querySelectorAll('#mr-tabs .tab').forEach(b => b.onclick = () => switchMr(b.dataset.tab));
 document.getElementById('notify-clear').onclick = async () => {
-  try { await api('/api/notifications', { method:'DELETE' }); loadNotifies(); loadNotifyCount(); } catch(e){ alert(e.message); }
+  if (!confirm('确定清空我的全部消息？')) return;
+  try { await api('/api/notifications', { method: 'DELETE' }); loadNotifies(); loadNotifyCount(); } catch (e) { alert(e.message); }
 };
+document.getElementById('rec-search').onclick = () => {
+  recKind = document.getElementById('rec-kind').value;
+  recQ = document.getElementById('rec-q').value.trim();
+  recPage = 1; loadRecords();
+};
+document.getElementById('rec-prev').onclick = () => { if (recPage > 1) { recPage--; loadRecords(); } };
+document.getElementById('rec-next').onclick = () => { if (recPage * recPageSize < recTotal) { recPage++; loadRecords(); } };
 
 /* ============ PPT 工坊（v2.0 大点 02：PPT 生成 Agent + SSE 进度） ============ */
 let curPptId = null, curPptOutline = null;

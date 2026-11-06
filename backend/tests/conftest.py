@@ -43,3 +43,28 @@ def db_session():
         yield db
     finally:
         db.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_redis():
+    """v2.0 大点 07：消息模块用例需要真实 Redis。
+
+    复用项目自带的三态启动器（复用外部 → 拉起内置 → 降级）；结束时只关自己拉起的实例。
+    Redis 不可用时用例里的断言会退化成"空列表"，不阻塞其他测试。
+    """
+    from src.core import redis_boot, redis_client
+
+    state = {"state": "degraded"}
+    try:
+        state = redis_boot.ensure()
+        redis_client.reset()          # URL 可能被运行期覆写（去 auth），必须重建连接池
+        redis_client.get_redis()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        yield state
+    finally:
+        try:
+            redis_boot.stop()
+        except Exception:  # noqa: BLE001
+            pass
