@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜀道安全助手 · Agent 工作与工具调用体系</title>
+<style>
+  :root{
+    --bg:#0b0f14; --bg-2:#10161d; --panel:#141b23; --panel-2:#1a232d;
+    --line:#26323f; --line-2:#32414f;
+    --ink:#e8eef5; --muted:#93a4b5; --dim:#6d7f91;
+    --gold:#d4a64a; --red:#c0392b; --blue:#4c9be8; --green:#3fb984; --violet:#9b7ede; --teal:#39b0a8;
+    --mono:"JetBrains Mono","Cascadia Code",Consolas,"Courier New",monospace;
+    --sans:"Microsoft YaHei UI","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 12% -5%, rgba(212,166,74,.10), transparent 60%),
+      radial-gradient(900px 500px at 88% 0%, rgba(76,155,232,.08), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1500px;margin:0 auto;padding:34px 28px 60px}
+  /* ---------- hero ---------- */
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;color:var(--gold);text-transform:uppercase}
+  h1{font-size:34px;line-height:1.2;margin:10px 0 8px;letter-spacing:.01em}
+  h1 em{font-style:normal;color:var(--gold)}
+  .sub{color:var(--muted);font-size:14.5px;line-height:1.85;max-width:1020px;margin:0}
+  .stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(20,27,35,.72);font-size:12.5px;color:var(--muted)}
+  .chip b{color:var(--ink);font-family:var(--mono);font-weight:600}
+  .chip i{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block}
+  .chip.c2 i{background:var(--blue)} .chip.c3 i{background:var(--green)} .chip.c4 i{background:var(--violet)} .chip.c5 i{background:var(--teal)}
+  /* ---------- tabs ---------- */
+  .flowbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:26px 0 14px}
+  .flowbar .label{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.12em;margin-right:6px}
+  .ftab{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--muted);padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;transition:.18s;font-family:var(--sans)}
+  .ftab:hover{border-color:var(--line-2);color:var(--ink)}
+  .ftab.on{background:rgba(212,166,74,.14);border-color:rgba(212,166,74,.6);color:#f3e2bb}
+  .ftab .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px}
+  .ftab[data-flow="chat"] .dot{background:var(--blue)} .ftab[data-flow="contrib"] .dot{background:var(--green)}
+  .ftab[data-flow="ppt"] .dot{background:var(--violet)} .ftab[data-flow="hazard"] .dot{background:var(--red)}
+  .ftab[data-flow="all"] .dot{background:var(--gold)}
+  /* ---------- canvas ---------- */
+  .canvas-wrap{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#0d131a,#0b1016);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  svg#map{display:block;width:100%;height:auto;min-height:420px}
+  .node{cursor:pointer}
+  .node rect.box{transition:filter .18s, opacity .22s}
+  .node:hover rect.box{filter:brightness(1.18)}
+  .node.dim{opacity:.18}
+  .node.sel rect.box{filter:brightness(1.25)}
+  .edge{transition:opacity .22s, stroke-width .18s}
+  .edge.dim{opacity:.07}
+  .edge.hot{stroke-width:2.6}
+  .steplabel{pointer-events:none}
+  /* ---------- legend / detail ---------- */
+  .legend{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin:12px 2px 0;color:var(--dim);font-size:12px}
+  .legend .k{display:inline-flex;align-items:center;gap:7px}
+  .legend .k svg{overflow:visible}
+  .detail{margin-top:14px;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;background:var(--panel);padding:14px 16px;min-height:66px}
+  .detail h4{margin:0 0 6px;font-size:14px}
+  .detail p{margin:0;color:var(--muted);font-size:13px;line-height:1.8}
+  .detail code{font-family:var(--mono);font-size:11.5px;color:#e9d6a8;background:rgba(212,166,74,.1);padding:1px 6px;border-radius:4px}
+  /* ---------- cards ---------- */
+  .sec-title{display:flex;align-items:baseline;gap:12px;margin:40px 0 14px}
+  .sec-title h2{font-size:19px;margin:0}
+  .sec-title span{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 16px 14px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold)}
+  .card.c-chat::before{background:var(--blue)} .card.c-contrib::before{background:var(--green)}
+  .card.c-ppt::before{background:var(--violet)} .card.c-hazard::before{background:var(--red)}
+  .card.c-aux::before{background:var(--teal)}
+  .card h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .card .role{font-family:var(--mono);font-size:11px;color:var(--dim);margin-bottom:10px}
+  .card ul{margin:0;padding-left:18px;color:var(--muted);font-size:12.8px;line-height:1.9}
+  .card ul b{color:var(--ink);font-weight:600}
+  .card .file{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px dashed var(--line);padding-top:8px;line-height:1.7;word-break:break-all}
+  /* ---------- tool table ---------- */
+  .tbl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);background:var(--panel-2);font-weight:500}
+  td:first-child{font-family:var(--mono);font-size:12px;color:#e9d6a8;white-space:nowrap}
+  td{color:var(--muted)} tr:last-child td{border-bottom:none}
+  td small{color:var(--dim);font-family:var(--mono);font-size:10.5px}
+  footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:12px;line-height:1.9;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  footer b{color:var(--muted);font-weight:600}
+  @media (max-width:900px){ h1{font-size:26px} .wrap{padding:22px 14px 40px} }
+
+  /* v2：链路过滤与曼哈顿路由 */
+  .edge{transition:opacity .22s}
+  .edge.hide,.elabel.hide,.stepnum.hide{display:none}
+  .edge.faint{opacity:.10}
+  .edge.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">ShuDao Smart AI Security Assistant · v2.0 · agent topology</div>
+  <h1>Agent 工作与<em>工具调用</em>体系</h1>
+  <p class="sub">
+    四个在岗 Agent 围绕两条主线运转：<b>隐患闭环</b>（识别 → 上报 → 派单 → 整改 → 验收 → 记录）与<b>知识沉淀</b>（缺口驱动的采集、审核、入库）。
+    每个 Agent 都有明确的工具边界：检索、采集、文档写作、视觉审图、通知与归档，全部由确定性代码控制预算与闸门，模型只在被划定的位置做判断。
+  </p>
+  <div class="stats">
+    <span class="chip"><i></i>4 个在岗 Agent<b>+ 2 个辅助智能体</b></span>
+    <span class="chip c2"><i></i>知识库检索块<b>17.8k</b></span>
+    <span class="chip c3"><i></i>PPT 阶段<b>S0–S8</b></span>
+    <span class="chip c4"><i></i>隐患缺口阈值<b>0.65</b></span>
+    <span class="chip c5"><i></i>工具 / 外部系统<b>12 类</b></span>
+  </div>
+
+  <div class="flowbar">
+    <span class="label">链路</span>
+    <button class="ftab on" data-flow="all"><span class="dot"></span>全部（拓扑）</button>
+    <button class="ftab" data-flow="chat"><span class="dot"></span>AI 问答</button>
+    <button class="ftab" data-flow="contrib"><span class="dot"></span>知识贡献</button>
+    <button class="ftab" data-flow="ppt"><span class="dot"></span>PPT 生成</button>
+    <button class="ftab" data-flow="hazard"><span class="dot"></span>隐患识别</button>
+    <button class="ftab" data-flow="msg"><span class="dot"></span>消息与记录</button>
+    <span class="hint">按 1–6 切换 · 点节点看职责</span>
+  </div>
+
+  <div class="canvas-wrap">
+    <svg id="map" viewBox="0 0 1460 930" role="img" aria-label="蜀道安全助手 Agent 工作与工具调用架构图"></svg>
+  </div>
+
+  <div class="legend">
+    <span class="k"><svg width="26" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#4c9be8" stroke-width="2"/></svg>问答</span>
+    <span class="k"><svg width="26" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#3fb984" stroke-width="2"/></svg>知识贡献</span>
+    <span class="k"><svg width="26" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#9b7ede" stroke-width="2"/></svg>PPT</span>
+    <span class="k"><svg width="26" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#c0392b" stroke-width="2"/></svg>隐患</span>
+    <span class="k"><svg width="26" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#39b0a8" stroke-width="2"/></svg>消息</span>
+    <span class="k"><svg width="26" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#d4a64a" stroke-width="2" stroke-dasharray="5 4"/></svg>异步 / 写回</span>
+    <span class="k">数字 = 该链路内的调用顺序</span>
+  </div>
+
+  <div class="detail" id="detail">
+    <h4>全部（拓扑）</h4>
+    <p>只画节点与分层，不画边，避免连线过多看不清。点上方任一条链路，才会画出该链路的调用顺序；点任意节点可以看它的职责、读写的数据与代码位置。</p>
+  </div>
+
+  <div class="sec-title"><h2>四个 Agent 的职责边界</h2><span>what each agent owns</span></div>
+  <div class="cards">
+    <div class="card c-chat">
+      <h3>AI 问答 Agent</h3>
+      <div class="role">chat_agent · LangChain create_agent · 工具 1 个</div>
+      <ul>
+        <li><b>前置门禁</b>：意图识别先判闲聊/知识，闲聊直答不检索（避免答非所问的成本）。</li>
+        <li><b>理解</b>：陈述句化、语义专业化、多主题拆分（上限 2 条）、剔除已检索项。</li>
+        <li><b>检索</b>：子块级混合检索（向量 + BM25）+ 重排 fp16，会话级缓存滑 TTL。</li>
+        <li><b>工具</b>：<code>retrieve_more</code> 补检，代码硬拦“至少调用一次”，不靠模型自觉。</li>
+        <li><b>输出</b>：流式 SSE + 引用来源；检索失败降级直连 LLM 并显式标注“未引用”。</li>
+      </ul>
+      <div class="file">src/ai/intent.py · query_preprocess.py · sufficiency.py · rag.py · chat_agent.py · routers/chat.py</div>
+    </div>
+
+    <div class="card c-contrib">
+      <h3>知识贡献 Agent</h3>
+      <div class="role">agent_scout · Playwright 采集 · 人审后入库</div>
+      <ul>
+        <li><b>触发</b>：回答自述“资料不足”或调用缺口上报，不靠人工点按钮。</li>
+        <li><b>采集</b>：多引擎配置化（360 → 搜狗 → Bing）、来源质量分级、SSRF 硬边界。</li>
+        <li><b>闸门</b>：关键词相关 + 条款级证据 + 知识含量（≥1000 字 / ≥3 出处 / ≥5 条），不足输出 INSUFFICIENT 而不是凑字。</li>
+        <li><b>产出</b>：纯知识正文 md（来源以小字保留），提交管理员审核；通过后落 <code>knowledge_src</code> 四类并增量入库。</li>
+        <li><b>审计</b>：<code>agent_clients</code> / <code>agent_runs</code> 记录每次运行，案例库双向回写审核结论。</li>
+      </ul>
+      <div class="file">src/ai/agent_scout.py · services/knowledge_contrib_service.py · agent_docs.py · kb_govern.py</div>
+    </div>
+
+    <div class="card c-ppt">
+      <h3>PPT 生成 Agent</h3>
+      <div class="role">ppt_agent · S0–S8 混合式编排 · OfficeCLI 唯一写者</div>
+      <ul>
+        <li><b>阶段</b>：S0 预处理 → S1 取据 → S2 判定 → S3 补检 → S4 大纲 → S5 素材 → S6 逐页制作 + 自检 → S7 校验 → S8 落盘（S2/S3/S6/S7 在 Agent 内部，图上只画对外调用）。</li>
+        <li><b>分工</b>：代码管阶段与几何（版式坐标由代码算），模型只管每页文字与配图意图。</li>
+        <li><b>工具</b>：OfficeCLI 建/批处理/截图/校验/释放文件；AGNES 只做版面四类问题审图；Unsplash 配图。</li>
+        <li><b>隔离</b>：每账号每任务一个沙箱目录；进度走 SSE 且落 jsonl，断线可回看。</li>
+        <li><b>兜底</b>：OfficeCLI 缺失时回落内置 <code>ppt_local</code>，不让整单失败。</li>
+      </ul>
+      <div class="file">src/ai/ppt_agent.py · ppt_layout.py · ppt_tools.py · ppt_service.py · core/paths.py</div>
+    </div>
+
+    <div class="card c-hazard">
+      <h3>隐患识别 Agent</h3>
+      <div class="role">hazard_agent · 视觉 + RAG + 缺口补料 · SSE 四阶段</div>
+      <ul>
+        <li><b>视觉</b>：qwen3.7-plus 出隐患（类别/等级/描述/坐标），坐标归一化到原图，随后进入编排。</li>
+        <li><b>检索</b>：每条隐患并发检索（8s 超时），Top1 &lt; 0.65 判定“知识库无依据”。</li>
+        <li><b>补料</b>：缺口合并成一次网搜（复用贡献 Agent 的采集链路，70s 硬超时），同时提交知识文件审核。</li>
+        <li><b>汇总</b>：一次 LLM 写建议，引用必须能对上证据（库内 doc·章节 / 网络主机），对不上就不写建议。</li>
+        <li><b>呈现</b>：前端 SVG 叠加（类别定色相、等级定深浅、聚焦淡化），服务端烘焙 JPG 存 <code>hazard_ai_analysis</code>。</li>
+      </ul>
+      <div class="file">src/ai/hazard_agent.py · vision.py · utils/boxes.py · core/box_style.py · services/hazard_analysis_service.py</div>
+    </div>
+
+    <div class="card c-aux" style="grid-column:span 2">
+      <h3>辅助智能体</h3>
+      <div class="role">intent · review_preview · vision_agent</div>
+      <ul>
+        <li><b>意图识别</b>：纯 LLM 单次二分类，8s 独立超时，失败一律退回“知识问答”（误判代价不对称）。</li>
+        <li><b>审核预筛</b>：给管理员出参考意见，<b>只读不写库</b>，避免 AI 直接改审核结论。</li>
+        <li><b>视觉审图</b>：AGNES 只看截图，只回答溢出/遮挡/对比度/缺失四类问题，失败按 skipped 处理。</li>
+      </ul>
+      <div class="file">src/ai/intent.py · routers/knowledge_contrib.py · ai/vision_agent.py</div>
+    </div>
+  </div>
+
+  <div class="sec-title"><h2>工具调用清单</h2><span>who calls what, and where it lands</span></div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>工具 / 能力</th><th>调用方</th><th>做什么</th><th>代码位置</th></tr></thead>
+      <tbody>
+        <tr><td>retrieve_more</td><td>问答 Agent</td><td>缺口补检，代码硬拦至少 1 次；返回块与来源</td><td><small>ai/chat_agent.py</small></td></tr>
+        <tr><td>kb_search</td><td>PPT Agent</td><td>按主题取据，喂给大纲与每页要点</td><td><small>ai/ppt_tools.py</small></td></tr>
+        <tr><td>Playwright 采集</td><td>知识贡献 / 隐患缺口</td><td>多引擎搜索、来源白名单、正文抽取、SSRF 拦截</td><td><small>ai/agent_scout.py</small></td></tr>
+        <tr><td>MinerU CLI</td><td>知识贡献</td><td>PDF/Office → md（独立环境子进程，不进主环境）</td><td><small>services/kb_convert.py</small></td></tr>
+        <tr><td>OfficeCLI</td><td>PPT Agent</td><td>唯一 .pptx 写者：建页/批处理/截图/校验/释放锁</td><td><small>ai/ppt_tools.py</small></td></tr>
+        <tr><td>AGNES 审图</td><td>PPT Agent</td><td>看截图只报四类版面问题，失败跳过</td><td><small>ai/vision_agent.py</small></td></tr>
+        <tr><td>Unsplash</td><td>PPT Agent</td><td>配图检索与下载，体积/比例在版式层校验</td><td><small>ai/ppt_tools.py</small></td></tr>
+        <tr><td>qwen 视觉</td><td>隐患识别</td><td>图像 → 隐患条目 + 像素坐标（1024 长边系）</td><td><small>ai/vision.py</small></td></tr>
+        <tr><td>画框 / 烘焙</td><td>隐患识别 / 上报</td><td>SVG 叠加 + 服务端 JPG，共用一套样式常量</td><td><small>utils/boxes.py · core/box_style.py</small></td></tr>
+        <tr><td>站内消息</td><td>全部业务服务</td><td>HASH+ZSET 消息、按隐患+类型删除、闭环清空、30s 熔断</td><td><small>services/notification_service.py</small></td></tr>
+        <tr><td>记录归档</td><td>验收 / 知识审核</td><td>闭环隐患与贡献结果写成可翻阅快照（幂等）</td><td><small>services/record_service.py</small></td></tr>
+        <tr><td>Redis 缓存</td><td>问答 / PPT / 隐患</td><td>会话检索缓存、PPT 进度、隐患结果 10 分钟缓存</td><td><small>core/redis_client.py</small></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    <div><b>读图方式</b>　从左到右是「入口 → Agent → 工具 / 模型 → 数据与产出」；上方链路按钮可只亮一条主线，数字是主线内的调用顺序。</div>
+    <div><b>设计原则</b>　确定性代码管预算与闸门，模型只在被划定的位置判断；任何“没有证据”的输出都必须显式标注，而不是编造。</div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  const LAYER = {
+    entry: { stroke: "#3a4a5a", fill: "rgba(24,33,44,.92)", accent: "#8fa3b8" },
+    agent: { stroke: "#4a5a6a", fill: "rgba(26,36,48,.95)", accent: "#d4a64a" },
+    tool:  { stroke: "#3c4c5c", fill: "rgba(22,31,41,.92)", accent: "#4c9be8" },
+    data:  { stroke: "#3c4c5c", fill: "rgba(20,28,38,.92)", accent: "#3fb984" },
+    out:   { stroke: "#3c4c5c", fill: "rgba(22,31,41,.92)", accent: "#9b7ede" }
+  };
+  const FLOW = { chat: "#4c9be8", contrib: "#3fb984", ppt: "#9b7ede", hazard: "#c0392b", msg: "#39b0a8" };
+
+  const nodes = [
+    { id: "A1", x: 36, y: 96,  w: 196, h: 56, layer: "entry", title: "隐患上报 / 详情", sub: "H01 · H03 · 图片 + 定位", flows: ["hazard"] },
+    { id: "A2", x: 36, y: 186, w: 196, h: 56, layer: "entry", title: "AI 问答", sub: "流式回答 + 引用来源", flows: ["chat"] },
+    { id: "A3", x: 36, y: 276, w: 196, h: 56, layer: "entry", title: "知识贡献", sub: "上传 / 预览 / 审核进度", flows: ["contrib"] },
+    { id: "A4", x: 36, y: 366, w: 196, h: 56, layer: "entry", title: "PPT 工坊", sub: "主题 + 模板 + 实时进度", flows: ["ppt"] },
+    { id: "A5", x: 1156, y: 596, w: 268, h: 64, layer: "out", title: "消息与记录（用户视图）", sub: "30s 轮询 · 记录长期可查", flows: ["msg"] },
+
+    { id: "B1", x: 284, y: 150, w: 214, h: 58, layer: "agent", title: "意图门禁 intent", sub: "闲聊 / 知识 二分类 · 8s", flows: ["chat"] },
+    { id: "B2", x: 284, y: 240, w: 214, h: 64, layer: "agent", title: "问答 Agent", sub: "create_agent · retrieve_more", flows: ["chat"] },
+    { id: "B3", x: 284, y: 336, w: 214, h: 64, layer: "agent", title: "知识贡献 Agent", sub: "agent_scout · 缺口触发", flows: ["contrib"] },
+    { id: "B4", x: 284, y: 432, w: 214, h: 64, layer: "agent", title: "PPT Agent", sub: "S0–S8 · 混合式编排", flows: ["ppt"] },
+    { id: "B5", x: 284, y: 540, w: 214, h: 64, layer: "agent", title: "隐患识别 Agent", sub: "检索 + 补料 + 汇总", flows: ["hazard"] },
+    { id: "B6", x: 284, y: 650, w: 214, h: 52, layer: "agent", title: "审核预筛 / 视觉审图", sub: "只读参考 · 失败跳过", flows: ["contrib", "ppt"] },
+
+    { id: "C1", x: 556, y: 96,  w: 246, h: 60, layer: "tool", title: "混合检索 RAG", sub: "子块 + BM25 + 重排 fp16", flows: ["chat", "ppt", "hazard"] },
+    { id: "C2", x: 556, y: 186, w: 246, h: 56, layer: "tool", title: "预处理 / 充分性", sub: "陈述句化 · 拆分 ≤2 · 补检", flows: ["chat"] },
+    { id: "C3", x: 556, y: 376, w: 246, h: 60, layer: "tool", title: "采集 · 来源闸门", sub: "多引擎 · 白名单 · 条款证据", flows: ["contrib", "hazard"] },
+    { id: "C4", x: 556, y: 466, w: 246, h: 60, layer: "tool", title: "知识闸门 · 写 md", sub: "≥1000 字 · ≥3 出处 · ≥5 条", flows: ["contrib"] },
+    { id: "C5", x: 556, y: 556, w: 246, h: 58, layer: "tool", title: "OfficeCLI 写者", sub: "建页 / 批处理 / 截图 / 校验", flows: ["ppt"] },
+    { id: "C6", x: 556, y: 646, w: 246, h: 56, layer: "tool", title: "AGNES 审图", sub: "溢出 / 遮挡 / 对比 / 缺失", flows: ["ppt"] },
+    { id: "C7", x: 556, y: 282, w: 246, h: 58, layer: "tool", title: "视觉识别 qwen3.7", sub: "隐患 + 坐标（1024 长边系）", flows: ["hazard"] },
+    { id: "C8", x: 556, y: 736, w: 246, h: 58, layer: "tool", title: "建议汇总 · 引用校验", sub: "kb doc·章节 / web 主机", flows: ["hazard"] },
+
+    { id: "D1", x: 856, y: 96,  w: 232, h: 58, layer: "data", title: "Chroma safety_kb", sub: "17.8k 块 · 四类知识源", flows: ["chat", "ppt", "hazard", "contrib"] },
+    { id: "D2", x: 856, y: 196, w: 232, h: 58, layer: "data", title: "MySQL", sub: "业务 / 贡献 / 记录 / 分析", flows: ["chat", "contrib", "hazard", "msg"] },
+    { id: "D3", x: 856, y: 296, w: 232, h: 58, layer: "data", title: "Redis 7.4", sub: "缓存 · 消息 · 进度 · 熔断", flows: ["chat", "ppt", "hazard", "msg"] },
+    { id: "D4", x: 856, y: 396, w: 232, h: 58, layer: "data", title: "文件系统", sub: "uploads · knowledge_src · 沙箱", flows: ["contrib", "ppt", "hazard"] },
+    { id: "D5", x: 856, y: 510, w: 232, h: 58, layer: "data", title: "模型 API", sub: "DeepSeek 主 · AGNES 降级", flows: ["chat", "contrib", "ppt", "hazard"] },
+    { id: "D6", x: 856, y: 606, w: 232, h: 58, layer: "data", title: "外部网站", sub: "gov / org / edu 优先", flows: ["contrib", "hazard"] },
+    { id: "D7", x: 856, y: 702, w: 232, h: 58, layer: "data", title: "MinerU CLI", sub: "独立环境 · 失败兜底", flows: ["contrib"] },
+
+    { id: "E1", x: 1156, y: 156, w: 268, h: 64, layer: "out", title: "流式回答 + 引用", sub: "SSE · 无依据时不伪造来源", flows: ["chat"] },
+    { id: "E2", x: 1156, y: 346, w: 268, h: 64, layer: "out", title: "待审贡献 → 人审 → 入库", sub: "知识文件 · 案例回写", flows: ["contrib"] },
+    { id: "E3", x: 1156, y: 520, w: 268, h: 64, layer: "out", title: ".pptx + 缩略图", sub: "可下载 · 可回看进度", flows: ["ppt"] },
+    { id: "E4", x: 1156, y: 700, w: 268, h: 64, layer: "out", title: "隐患卡片 + 标注图", sub: "建议带依据 · 全业务可见", flows: ["hazard"] }
+  ];
+
+  const edges = [
+    { f: "A2", t: "B1", flows: ["chat"], step: 1, label: "提问" },
+    { f: "B1", t: "B2", flows: ["chat"], step: 2, label: "knowledge" },
+    { f: "B2", t: "C2", flows: ["chat"], step: 3, label: "预处理" },
+    { f: "C2", t: "C1", flows: ["chat"], step: 4 },
+    { f: "C1", t: "D1", flows: ["chat", "ppt", "hazard"], label: "读库" },
+    { f: "B2", t: "C1", flows: ["chat"], step: 5, label: "retrieve_more" },
+    { f: "B2", t: "E1", flows: ["chat"], step: 6, label: "SSE" },
+    { f: "B2", t: "D3", flows: ["chat"], async: true, label: "缓存" },
+    { f: "B2", t: "D2", flows: ["chat"], async: true, label: "会话" },
+
+    { f: "A3", t: "B3", flows: ["contrib"], step: 1, label: "缺口" },
+    { f: "B3", t: "C3", flows: ["contrib"], step: 2, label: "采集" },
+    { f: "C3", t: "D6", flows: ["contrib", "hazard"], label: "抓取" },
+    { f: "C3", t: "C4", flows: ["contrib"], step: 3, label: "闸门" },
+    { f: "C4", t: "D5", flows: ["contrib"], label: "总结" },
+    { f: "C4", t: "E2", flows: ["contrib"], step: 4, label: "提交" },
+    { f: "E2", t: "D4", flows: ["contrib"], step: 5, async: true, label: "审核入库" },
+    { f: "D4", t: "D1", flows: ["contrib"], step: 6, async: true, label: "增量入库" },
+    { f: "B6", t: "B3", flows: ["contrib"], async: true, label: "预筛" },
+    { f: "C4", t: "D7", flows: ["contrib"], async: true, label: "PDF→md" },
+
+    { f: "A4", t: "B4", flows: ["ppt"], step: 1, label: "主题" },
+    { f: "B4", t: "C1", flows: ["ppt"], step: 2, label: "取据" },
+    { f: "B4", t: "C5", flows: ["ppt"], step: 3, label: "逐页" },
+    { f: "C5", t: "D4", flows: ["ppt"], label: "沙箱" },
+    { f: "B4", t: "C6", flows: ["ppt"], step: 4, label: "审图" },
+    { f: "C6", t: "D5", flows: ["ppt"], label: "视觉" },
+    { f: "B4", t: "D3", flows: ["ppt"], async: true, label: "进度", bottom: true },
+    { f: "B4", t: "D5", flows: ["ppt"], async: true, label: "文本", bottom: true },
+    { f: "B4", t: "E3", flows: ["ppt"], step: 5, label: "落盘" },
+
+    { f: "A1", t: "C7", flows: ["hazard"], step: 1, label: "上传图" },
+    { f: "C7", t: "B5", flows: ["hazard"], step: 2, label: "隐患" },
+    { f: "B5", t: "C1", flows: ["hazard"], step: 3, label: "并发 8s/条" },
+    { f: "B5", t: "C3", flows: ["hazard"], step: 4, label: "缺口 < 0.65" },
+    { f: "B5", t: "C8", flows: ["hazard"], step: 5, label: "汇总" },
+    { f: "C8", t: "D5", flows: ["hazard"], label: "写建议" },
+    { f: "B5", t: "D4", flows: ["hazard"], step: 6, label: "标注图" },
+    { f: "B5", t: "D2", flows: ["hazard"], async: true, label: "分析留档", bottom: true },
+    { f: "B5", t: "D3", flows: ["hazard"], async: true, label: "结果缓存", bottom: true },
+    { f: "B5", t: "E4", flows: ["hazard"], step: 7, label: "卡片" },
+
+    { f: "D3", t: "A5", flows: ["msg"], step: 1, async: true, label: "轮询 30s" },
+    { f: "D2", t: "A5", flows: ["msg"], step: 2, async: true, label: "记录" },
+    { f: "B3", t: "D3", flows: ["contrib"], async: true, label: "消息" },
+    { f: "A5", t: "E4", flows: ["msg"], step: 3, async: true, label: "回看标注" }
+  ];
+
+  const NODE_DESC = {
+    A1: ["隐患上报 / 详情", "上报支持多图与定位；详情页同时给原图与 AI 标注图，管理员与后续安全员都能看到。AI 识别结果可一键带入描述。", "front/safety/index.html · routers/hazards.py"],
+    A2: ["AI 问答入口", "提问 → 流式回答 + 引用；闲聊不检索，知识题才走完整链路。", "routers/chat.py · front/safety/index.html"],
+    A3: ["知识贡献入口", "上传文件或粘贴正文，预览转换结果，提交后等管理员审核。", "routers/knowledge_contrib.py"],
+    A4: ["PPT 工坊入口", "主题 + 模板 + 页数，生成过程有阶段进度、缩略图与下载。", "routers/ppt.py"],
+    A5: ["消息与记录", "消息（会随处理消失）+ 记录（闭环隐患 / 贡献结果，长期可查）；30s 轮询未读数。", "routers/notifications.py · routers/records.py"],
+    B1: ["意图门禁", "纯 LLM 单次二分类，带上一轮问题；8s 独立超时，失败退回“知识问答”（误判方向代价不对称）。", "src/ai/intent.py"],
+    B2: ["问答 Agent", "LangChain create_agent，工具只有一个 retrieve_more；代码硬拦至少调用一次，避免“看着在检索其实没查”。", "src/ai/chat_agent.py · routers/chat.py"],
+    B3: ["知识贡献 Agent", "缺口触发后自行采集、筛选、总结成 md 并提交审核；整个过程写入 agent_runs 可追溯。", "src/ai/agent_scout.py"],
+    B4: ["PPT Agent", "阶段由代码推进（进度条即阶段），每页文字与配图意图交给模型；OfficeCLI 是唯一写者。", "src/ai/ppt_agent.py"],
+    B5: ["隐患识别 Agent", "视觉出隐患 → 逐条并发检索 → 缺口合并一次网搜 → 汇总建议并校验引用；全程 SSE 推送阶段。", "src/ai/hazard_agent.py · routers/vision.py"],
+    B6: ["辅助智能体", "审核预筛给管理员参考（只读）；视觉审图只报版面四类问题，失败跳过不阻塞。", "routers/knowledge_contrib.py · ai/vision_agent.py"],
+    C1: ["混合检索 RAG", "子块级向量检索 + BM25，重排 fp16；问答 / PPT / 隐患三条链路共用同一套检索内核。", "src/ai/rag.py · retriever"],
+    C2: ["预处理 / 充分性", "陈述句化、语义专业化、拆分 ≤2 条、剔除已检索；判定“材料够不够”，不够只给缺口子查询。", "src/ai/query_preprocess.py · sufficiency.py"],
+    C3: ["采集 · 来源闸门", "Playwright 多引擎采集，禁内网 / 本机；搜索页与文库不算来源，要求条款级证据。", "src/ai/agent_scout.py"],
+    C4: ["知识闸门 · 写 md", "≥1000 字、≥3 处引用、≥5 条目、正文无链接；材料不足输出 INSUFFICIENT，不凑字。", "src/ai/agent_scout.py · services/kb_govern.py"],
+    C5: ["OfficeCLI 写者", "create / batch / screenshot / validate / release_file；批量命令走临时文件避免 Windows 编码问题。", "src/ai/ppt_tools.py · ppt_layout.py"],
+    C6: ["AGNES 审图", "只看截图，只答四类问题；失败或超时按 skipped 处理，不当成故障。", "src/ai/vision_agent.py"],
+    C7: ["视觉识别", "qwen3.7-plus 输出隐患与坐标；先缩放到 1024 长边再识别，坐标按比例还原原图。", "src/ai/vision.py"],
+    C8: ["建议汇总 · 引用校验", "一次 LLM 为每条隐患写建议；引用必须对上检索块或网搜主机，编造的引用直接丢弃。", "src/ai/hazard_agent.py · prompt/prompts.yml"],
+    D1: ["Chroma 知识库", "safety_kb：17.8k 块，laws / procedures / plans / cases 四类；入库前清链接、保留来源文件。", "src/ai/knowledge.py · chroma/"],
+    D2: ["MySQL", "业务表 + 贡献 / 审核 + 闭环记录（message_records）+ 隐患 AI 分析（hazard_ai_analysis）。", "src/models · database/schema.sql"],
+    D3: ["Redis 7.4（内置）", "会话检索缓存、PPT 进度、隐患结果缓存、站内消息（HASH+ZSET，带 TTL 与 30s 熔断）。", "tools/redis · src/core/redis_client.py"],
+    D4: ["文件系统", "uploads（原图 / 标注图）、knowledge_src（审核后知识）、PPT 账号沙箱。", "src/core/paths.py · uploads/"],
+    D5: ["模型 API", "DeepSeek 主模型 + AGNES 降级；嵌入与重排是本地 bge 模型，不上云。", "src/ai/llm_client.py · config.py"],
+    D6: ["外部网站", "政府 / 机构 / 院校站点优先；采集有体积、页数、总时长与域名黑名单。", "src/ai/agent_scout.py"],
+    D7: ["MinerU CLI", "独立环境子进程转换 PDF / Office，避免升级依赖破坏主环境。", "src/services/kb_convert.py"],
+    E1: ["流式回答 + 引用", "SSE 逐字输出，附来源；检索失败时明确标注“未引用”，不假装有依据。", "routers/chat.py"],
+    E2: ["待审贡献 → 人审 → 入库", "Agent 与用户贡献同一条审核流；通过后落 knowledge_src、增量入库，案例库回写结论。", "services/knowledge_contrib_service.py"],
+    E3: [".pptx + 缩略图", "生成结果可下载，进度与截图留在任务记录里，断线可回看。", "services/ppt_service.py"],
+    E4: ["隐患卡片 + 标注图", "每条建议带依据；标注图入库，列表缩略图与详情都能看到（全业务可见）。", "services/hazard_analysis_service.py · front/safety/index.html"]
+  };
+
+  const FLOW_META = {
+    all: ["全部（拓扑）", "只画节点与分层，不画边，避免连线过多看不清。点上方任一条链路，才会画出该链路的调用顺序；点任意节点可以看它的职责、读写的数据与代码位置。"],
+    chat: ["AI 问答链路", "提问 → 意图门禁（闲聊直答）→ 预处理与充分性 → 混合检索 → retrieve_more 补检 → 流式回答并附引用。检索失败降级直连模型，但会标明“未引用”。"],
+    contrib: ["知识贡献链路", "缺口触发采集 → 来源闸门与知识闸门 → 写成 md 提交审核 → 管理员通过后落 knowledge_src 并增量入库；全程有 agent_runs 审计。"],
+    ppt: ["PPT 生成链路", "S0 预处理 → S1 取据 → S2 判定 → S3 补检 → S4 大纲 → S5 素材 → S6 逐页制作与自检 → S7 校验 → S8 落盘。OfficeCLI 唯一写者，AGNES 只审版面。"],
+    hazard: ["隐患识别链路", "上传图 → 视觉出隐患 → 逐条并发检索（8s）→ Top1<0.65 判缺口 → 合并一次网搜（70s 上限）→ 汇总建议并校验引用 → 标注图与卡片入库存档。"],
+    msg: ["消息与记录链路", "业务动作由服务层写 Redis 消息（HASH+ZSET）：闭环删上报 / 整改 / 派单、清堆积驳回；前端 30s 轮询角标取未读，记录页读 MySQL 里的闭环快照。写侧发生在业务服务里，不单独画线以免与其它链路交叉。"]
+  };
+
+  const svg = document.getElementById("map");
+  const detail = document.getElementById("detail");
+  let currentFlow = "all";
+  let selected = null;
+
+  const defs = `
+    <defs>
+      <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+        <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#1a232d" stroke-width="1"/>
+      </pattern>
+      ${Object.entries(FLOW).map(([k, c]) => `
+        <marker id="arw-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="${c}"/>
+        </marker>`).join("")}
+    </defs>
+    <rect x="0" y="0" width="1460" height="930" fill="url(#grid)" opacity=".5"/>
+  `;
+
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const byId = id => nodes.find(n => n.id === id);
+
+  const BOTTOM = 902, TOP = 80;
+  const COL_X = [36, 284, 556, 856, 1156];
+
+  function colOf(x) {
+    let best = 0, d = 1e9;
+    COL_X.forEach((cx, i) => { const t = Math.abs(cx - x); if (t < d) { d = t; best = i; } });
+    return best;
+  }
+
+  // 曼哈顿路由：按"列距"决定走列间通道 / 底部通道，避免穿过中间列的节点
+  function route(e, a, b) {
+    const sx = a.x + a.w, sy = a.y + a.h / 2;
+    const tx = b.x, ty = b.y + b.h / 2;
+    const off = (e.lane || 0);
+    const ca = colOf(a.x), cb = colOf(b.x);
+
+    if (e.viaY) {                             // 指定水平走廊（消息链路用，避免绕整个画布）
+      const y = e.viaY + off;
+      const dropX = tx - 14;
+      return {
+        d: `M ${sx} ${sy} V ${y} H ${dropX} V ${ty} H ${tx}`,
+        stepAt: { x: dropX - 16, y: (y + ty) / 2 }
+      };
+    }
+
+    if (cb - ca >= 2) {                       // 跨列：按距离选顶部 / 底部通道
+      const useTop = !e.bottom && (sy - TOP) + (ty - TOP) < (BOTTOM - sy) + (BOTTOM - ty);
+      const y = useTop ? TOP + off : BOTTOM - off;
+      const dropX = tx - 14;
+      return {
+        d: `M ${sx} ${sy} V ${y} H ${dropX} V ${ty} H ${tx}`,
+        stepAt: { x: dropX - 16, y: (y + ty) / 2 }
+      };
+    }
+    if (cb === ca) {                          // 同列 → 左侧通道
+      const lane = a.x - 20 - off;
+      return {
+        d: `M ${a.x} ${sy} H ${lane} V ${ty} H ${tx}`,
+        stepAt: { x: lane, y: (sy + ty) / 2 }
+      };
+    }
+    if (cb > ca) {                            // 右侧相邻列 → 列间通道
+      const lane = sx + (tx - sx) * 0.5 + off;
+      return {
+        d: `M ${sx} ${sy} H ${lane} V ${ty} H ${tx}`,
+        stepAt: { x: lane, y: (sy + ty) / 2 }
+      };
+    }
+    // 反向相邻列（C→B 这类）→ 走两列之间的通道，不要绕底部
+    if (ca - cb === 1) {
+      const lane = a.x - 18 - off;
+      return {
+        d: `M ${a.x} ${sy} H ${lane} V ${ty} H ${b.x + b.w}`,
+        stepAt: { x: lane, y: (sy + ty) / 2 }
+      };
+    }
+    const y = BOTTOM - off;                   // 其它反向 → 底部通道
+    return {
+      d: `M ${sx} ${sy} V ${y} H ${tx} V ${ty}`,
+      stepAt: { x: (sx + tx) / 2, y: y - 18 }
+    };
+  }
+
+
+  function pointsOf(d) {
+    const pts = []; let cx = 0, cy = 0;
+    d.split(/(?=[MHV])/).forEach(seg => {
+      const v = seg.trim(); if (!v) return;
+      const args = v.slice(1).trim().split(/[\s,]+/).map(Number);
+      if (v[0] === "M") { cx = args[0]; cy = args[1]; pts.push([cx, cy]); }
+      else if (v[0] === "H") { cx = args[0]; pts.push([cx, cy]); }
+      else if (v[0] === "V") { cy = args[0]; pts.push([cx, cy]); }
+    });
+    return pts;
+  }
+  function pathLength(d) {
+    const pts = pointsOf(d); let total = 0;
+    for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    return total;
+  }
+  function pointOnPath(d, ratio) {
+    const pts = pointsOf(d), segs = [];
+    let total = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      segs.push(l); total += l;
+    }
+    let target = total * ratio;
+    for (let i = 0; i < segs.length; i++) {
+      if (target <= segs[i] || i === segs.length - 1) {
+        const t = segs[i] ? Math.min(1, target / segs[i]) : 0;
+        return { x: pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, y: pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t };
+      }
+      target -= segs[i];
+    }
+    return { x: pts[0][0], y: pts[0][1] };
+  }
+
+  function render() {
+    let out = defs;
+    const cols = [["入口", 36], ["AGENT 编排", 284], ["工具与能力", 556], ["数据 / 外部", 856], ["用户可见产出", 1156]];
+    out += cols.map(([t, x]) => `<text x="${x}" y="58" fill="#6d7f91" font-size="11" font-family="JetBrains Mono, monospace" letter-spacing="2.5">${esc(t)}</text>
+      <line x1="${x}" y1="68" x2="${x + 176}" y2="68" stroke="#26323f"/>`).join("");
+
+    out += `<g id="edges">`;
+    edges.forEach((e, i) => {
+      const a = byId(e.f), b = byId(e.t);
+      if (!a || !b) return;
+      const r = route(Object.assign({}, e, { lane: ((i % 5) - 2) * 6 }), a, b);
+      const color = FLOW[e.flows[0]];
+      const dash = e.async ? 'stroke-dasharray="6 5"' : "";
+      const tag = `data-i="${i}" data-flows="${e.flows.join(",")}" data-step="${e.step || ""}"`;
+      out += `<path class="edge" ${tag} d="${r.d}" fill="none" stroke="${color}" stroke-width="1.7"
+        stroke-linejoin="round" ${dash} marker-end="url(#arw-${e.flows[0]})"/>`;
+      // 标签不再画在线上（会压节点/互相盖），改为序号气泡的 <title> + 详情面板里的步骤清单
+      if (e.step) {
+        const len = pathLength(r.d);
+        const short = len < 130;                       // 短边：数字挑到线上方，避免压在节点边框
+        const pt = pointOnPath(r.d, short ? 0.5 : 0.9);
+        const cy = pt.y + (short ? -16 : 0);
+        out += `<g class="stepnum" ${tag} opacity="0">
+          <title>${esc(e.label || (e.f + " → " + e.t))}</title>
+          <circle cx="${pt.x}" cy="${cy}" r="9.5" fill="#0b0f14" stroke="${color}" stroke-width="1.6"/>
+          <text x="${pt.x}" y="${cy + 3.5}" fill="${color}" font-size="10" text-anchor="middle" font-family="JetBrains Mono, monospace">${e.step}</text>
+        </g>`;
+      }
+    });
+    out += `</g>`;
+
+    out += `<g id="nodes">`;
+    nodes.forEach(n => {
+      const l = LAYER[n.layer];
+      out += `<g class="node" data-id="${n.id}" data-flows="${n.flows.join(",")}">
+        <rect class="box" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="9" fill="${l.fill}" stroke="${l.stroke}" stroke-width="1.1"/>
+        <rect x="${n.x}" y="${n.y + 10}" width="3" height="${n.h - 20}" rx="2" fill="${l.accent}" opacity=".9"/>
+        <text x="${n.x + 16}" y="${n.y + 24}" fill="#e8eef5" font-size="13.5" font-weight="600">${esc(n.title)}</text>
+        <text x="${n.x + 16}" y="${n.y + 43}" fill="#93a4b5" font-size="10.8" font-family="JetBrains Mono, monospace">${esc(n.sub)}</text>
+      </g>`;
+    });
+    out += `</g>`;
+    svg.innerHTML = out;
+    bind();
+    applyFlow(currentFlow);
+  }
+
+  function bind() {
+    svg.querySelectorAll(".node").forEach(g => {
+      g.addEventListener("click", ev => {
+        ev.stopPropagation();
+        const id = g.dataset.id;
+        selected = selected === id ? null : id;
+        svg.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x.dataset.id === selected));
+        if (selected) showDetail(selected);
+        applyFlow(currentFlow);
+      });
+    });
+    svg.addEventListener("click", () => {
+      selected = null;
+      svg.querySelectorAll(".node").forEach(x => x.classList.remove("sel"));
+      applyFlow(currentFlow);
+    });
+  }
+
+  function showDetail(id) {
+    const n = byId(id); if (!n) return;
+    const d = NODE_DESC[id] || [n.title, n.sub];
+    detail.innerHTML = `<h4>${esc(d[0])}</h4><p>${esc(d[1])}<br><code>${esc(d[2])}</code></p>`;
+  }
+
+  function applyFlow(flow) {
+    currentFlow = flow;
+    const isAll = flow === "all";
+    const sel = selected;
+
+    svg.querySelectorAll(".node").forEach(g => {
+      const related = sel ? (g.dataset.id === sel || edges.some(e => (e.f === sel && e.t === g.dataset.id) || (e.t === sel && e.f === g.dataset.id))) : null;
+      const inFlow = g.dataset.flows.split(",").includes(flow);
+      g.classList.toggle("dim", sel ? !related : (!isAll && !inFlow));
+    });
+
+    svg.querySelectorAll(".edge, .elabel, .stepnum").forEach(el => {
+      const e = edges[+el.dataset.i];
+      if (!e) return;
+      const member = e.flows.includes(flow);
+      const rel = sel ? (e.f === sel || e.t === sel) : null;
+      let state;
+      if (sel) state = rel ? "on" : "hide";
+      else if (isAll) state = "hide";   // 拓扑视图不画边，避免 40 条线糊成网
+      else state = member ? "on" : "hide";
+      el.classList.toggle("hide", state === "hide");
+      el.classList.toggle("on", state === "on");
+      el.classList.toggle("faint", state === "faint");
+      if (el.classList.contains("stepnum")) {
+        el.setAttribute("opacity", (sel ? rel : (!isAll && member && e.step)) ? "1" : "0");
+      }
+      if (el.classList.contains("elabel")) {
+        el.setAttribute("opacity", (isAll && !sel) ? "0" : "1");
+      }
+    });
+
+    if (!sel) {
+      const meta = FLOW_META[flow] || FLOW_META.all;
+      let steps = "";
+      if (!isAll) {
+        const items = edges
+          .filter(e => e.flows.includes(flow) && e.step)
+          .sort((x, y) => x.step - y.step)
+          .map(e => `<span style="white-space:nowrap">${e.step}&nbsp;${esc(e.label || (e.f + "→" + e.t))}</span>`);
+        if (items.length) {
+          steps = `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px 14px;font-family:var(--mono);font-size:11.5px;color:#9fb0c2">${items.join("")}</div>`;
+        }
+      }
+      detail.innerHTML = `<h4>${esc(meta[0])}</h4><p>${esc(meta[1])}</p>${steps}`;
+    }
+  }
+
+  document.querySelectorAll(".ftab").forEach(b => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".ftab").forEach(x => x.classList.remove("on"));
+      b.classList.add("on");
+      selected = null;
+      svg.querySelectorAll(".node").forEach(x => x.classList.remove("sel"));
+      applyFlow(b.dataset.flow);
+    });
+  });
+
+  document.addEventListener("keydown", e => {
+    const map = { "1": "all", "2": "chat", "3": "contrib", "4": "ppt", "5": "hazard", "6": "msg" };
+    if (map[e.key]) {
+      const b = document.querySelector(`.ftab[data-flow="${map[e.key]}"]`);
+      if (b) b.click();
+    }
+  });
+
+  render();
+})();
+
+</script>
+</body>
+</html>
